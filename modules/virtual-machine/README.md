@@ -1,44 +1,27 @@
-# Virtual Machine Module
+# Linux Virtual Machine
 
-This module creates Azure Virtual Machines with managed disks.
-
-## Resources Created
-
-- Azure Virtual Machine
-- Network Interface
-- Managed OS Disk
-- Optional data disks
-
-## Usage
+Creates one SSH-only Linux VM with a primary NIC, managed OS disk, boot
+diagnostics, and system-assigned identity. Public IP and static private IP are
+opt-in inputs; this module does not create a Public IP resource.
 
 ```hcl
-module "virtual_machine" {
-  source = "../../modules/virtual-machine"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  subnet_id           = module.networking.subnet_ids["vms"]
-  
-  vm_size            = "Standard_D2s_v3"
-  admin_username     = "azureadmin"
-  admin_ssh_key_path = "~/.ssh/id_rsa.pub"
-  
-  tags = var.tags
+module "vm" {
+  source = "git::https://github.com/isaacrayner/TerraformTemplate.git//modules/virtual-machine?ref=v1.0.0"
+
+  name                   = "vm-admin-contoso-prod-uks-001"
+  network_interface_name = "nic-admin-contoso-prod-uks-001"
+  location               = "uksouth"
+  resource_group_name    = module.resource_groups.names["main"]
+  subnet_id              = module.networking.subnet_ids["vms"]
+  admin_ssh_public_key   = file("~/.ssh/id_ed25519.pub")
+  tags                    = var.tags
 }
 ```
 
-## Naming Convention
+The default image is Ubuntu 22.04 Gen2 with Secure Boot and vTPM enabled.
+Override `source_image`, `secure_boot_enabled`, or `vtpm_enabled` together when
+using an incompatible image/size. `admin_ssh_public_key` is key contents, not a
+path. `custom_data` must already be base64-encoded.
 
-- VM: `vm-{customer}-{env}-{region}-{instance}`
-- NIC: `nic-{customer}-{env}-{region}-{instance}`
-
-## Features
-
-- Linux or Windows VMs
-- SSH or password authentication
-- Managed disks (Standard/Premium SSD)
-- Auto-shutdown schedules (optional)
+Data disks, Public IP creation, backup, extensions, monitoring agents, and role
+assignments have independent lifecycles and are composed outside this module.

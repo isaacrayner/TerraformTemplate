@@ -123,10 +123,11 @@ customer_short_name = "contoso"
 environment         = "prod"
 location            = "eastus"
 location_code       = "eus"
-subscription_id     = "12345678-1234-1234-1234-123456789abc"
+landing_zone_subscription_id = "12345678-1234-1234-1234-123456789abc"
+compute_subscription_id      = "12345678-1234-1234-1234-123456789abc"
 
 # Networking (shared)
-enable_networking = true
+enable_spoke_networking = true
 vnet_address_space = ["10.0.0.0/16"]
 
 # 5 Storage Accounts for different purposes

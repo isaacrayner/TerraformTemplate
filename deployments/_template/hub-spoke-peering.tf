@@ -11,8 +11,8 @@ locals {
 # Hub → Spoke  (default provider — Landing Zone subscription)
 resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   count                        = local.hub_spoke_peering_enabled ? 1 : 0
-  name                         = "peer-hub-to-spoke-${var.customer_short_name}-${var.environment}"
-  resource_group_name          = module.hub_networking[0].resource_group_name
+  name                         = "peer-hub-to-spoke-${local.name_prefix}"
+  resource_group_name          = local.shared_resource_group_name
   virtual_network_name         = module.hub_networking[0].vnet_name
   remote_virtual_network_id    = module.spoke_networking[0].vnet_id
   allow_virtual_network_access = true
@@ -26,8 +26,8 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   count                        = local.hub_spoke_peering_enabled ? 1 : 0
   provider                     = azurerm.compute
-  name                         = "peer-spoke-to-hub-${var.customer_short_name}-${var.environment}"
-  resource_group_name          = module.spoke_networking[0].resource_group_name
+  name                         = "peer-spoke-to-hub-${local.name_prefix}"
+  resource_group_name          = local.resource_group_name
   virtual_network_name         = module.spoke_networking[0].vnet_name
   remote_virtual_network_id    = module.hub_networking[0].vnet_id
   allow_virtual_network_access = true

@@ -135,7 +135,8 @@ az role assignment create \
 | `tfStateStorageAccount` | stterraform{customer}001 | No |
 | `tfStateContainerName` | tfstate | No |
 | `tfStateKey` | {customer}-{region}-{env}.tfstate | No |
-| `subscription_id` | {Azure subscription ID} | No |
+| `landing_zone_subscription_id` | {Landing Zone subscription ID: hub, shared Key Vault, Log Analytics, Front Door} | No |
+| `compute_subscription_id` | {Compute subscription ID: spoke and workloads} | No |
 | `approverEmail` | ops-team@company.com | No |
 
 - [ ] Variable group created
@@ -174,10 +175,11 @@ customer_short_name = "{customer}"
 environment         = "{env}"
 location            = "{region}"
 location_code       = "{code}"
-subscription_id     = "{sub-id}"
+landing_zone_subscription_id = "{sub-id}"
+compute_subscription_id      = "{sub-id}"
 
 # Module Control
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault      = true
 # ... enable required modules

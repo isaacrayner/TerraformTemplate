@@ -1,29 +1,36 @@
 # Storage Accounts — Compute subscription
-# Multiple named instances for different purposes/applications.
-# Each key becomes part of the storage account name suffix.
+# Multiple named instances for different purposes/applications
+# Each key becomes part of the storage account name suffix
 
 # =====================================================
 # STORAGE ACCOUNTS (Multiple Named Instances)
 # =====================================================
 module "storage_account" {
-  for_each = var.storage_accounts
-  source   = "../../modules/storage-account"
+  for_each  = var.storage_accounts
+  source    = "../../modules/storage-account"
   providers = { azurerm = azurerm.compute }
 
-  customer_short_name = var.customer_short_name
-  environment         = var.environment
+  name                = "st${local.name_prefix_nodash}${each.key}"
   location            = var.location
-  location_code       = var.location_code
-  instance_number     = var.instance_number
-  name_suffix         = each.key  # e.g., "data", "logs", "appX"
-
-  resource_group_name = var.enable_spoke_networking ? module.spoke_networking[0].resource_group_name : var.existing_compute_resource_group_name
+  resource_group_name = local.resource_group_name
 
   account_tier             = each.value.tier
   account_replication_type = each.value.replication_type
   blob_containers          = each.value.blob_containers
 
+  network_access = each.value.network_access
+
   tags = merge(var.tags, {
-    Purpose = each.key
+    Purpose = each.key # Tag with the purpose/application name
   })
+}
+
+module "diag_storage_account" {
+  for_each  = local.diagnostics_enabled ? var.storage_accounts : {}
+  source    = "../../modules/diagnostic-setting"
+  providers = { azurerm = azurerm.compute }
+
+  name                       = "diag-${module.storage_account[each.key].storage_account_name}"
+  target_resource_id         = module.storage_account[each.key].storage_account_id
+  log_analytics_workspace_id = local.log_analytics_workspace_id
 }

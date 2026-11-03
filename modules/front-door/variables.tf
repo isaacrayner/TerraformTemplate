@@ -1,36 +1,17 @@
 # Input Variables — Azure Front Door + WAF Module
 
 # =====================================================
-# CORE IDENTITY VARIABLES
+# NAMING AND PLACEMENT (CONVENTIONS.md #1)
 # =====================================================
 
-variable "customer_short_name" {
-  description = "Short name for the customer (3-8 lowercase characters)"
-  type        = string
-  validation {
-    condition     = can(regex("^[a-z]{3,8}$", var.customer_short_name))
-    error_message = "Customer short name must be 3-8 lowercase letters only."
-  }
-}
-
-variable "environment" {
-  description = "Environment name (prod, dev, staging, uat, test)"
-  type        = string
-  validation {
-    condition     = contains(["prod", "dev", "staging", "uat", "test"], var.environment)
-    error_message = "Environment must be one of: prod, dev, staging, uat, test."
-  }
-}
-
-variable "location" {
-  description = "Azure region for the resource group (Front Door itself is a global resource)"
+variable "name_suffix" {
+  description = "Naming suffix computed in the calling root's locals, e.g. local.name_prefix. Resources are named fd-{suffix}, fde-{endpoint key}-{suffix}, waf{suffix without hyphens} and secpol-{suffix}."
   type        = string
 }
 
-variable "instance_number" {
-  description = "Instance number for resource naming (default: 1)"
-  type        = number
-  default     = 1
+variable "resource_group_name" {
+  description = "Resource group for the Front Door profile and WAF policy. Create it with the resource-group module; this module does not create one."
+  type        = string
 }
 
 variable "tags" {
@@ -119,9 +100,9 @@ variable "origin_groups" {
       }
   EOT
   type = map(object({
-    session_affinity_enabled     = optional(bool, false)
-    health_probe_path            = optional(string, "/")
-    health_probe_protocol        = optional(string, "Https")
+    session_affinity_enabled      = optional(bool, false)
+    health_probe_path             = optional(string, "/")
+    health_probe_protocol         = optional(string, "Https")
     health_probe_interval_seconds = optional(number, 100)
     # Load balancing settings
     load_balancing_sample_size                 = optional(number, 4)
@@ -175,12 +156,12 @@ variable "routes" {
     patterns_to_match   = optional(list(string), ["/*"])
     supported_protocols = optional(list(string), ["Http", "Https"])
     # https_redirect: redirect HTTP → HTTPS at the Front Door edge (recommended)
-    https_redirect      = optional(bool, true)
+    https_redirect = optional(bool, true)
     # forwarding_protocol: protocol used between Front Door and the origin
     # "HttpsOnly" (recommended), "HttpOnly", "MatchRequest"
     forwarding_protocol = optional(string, "HttpsOnly")
     # cache_enabled: enable CDN caching for static content
-    cache_enabled       = optional(bool, false)
+    cache_enabled                       = optional(bool, false)
     cache_query_string_caching_behavior = optional(string, "IgnoreQueryString")
   }))
   default = {}
@@ -204,8 +185,8 @@ variable "waf_mode" {
     - "Prevention" — actively blocks matched requests (use in production)
     - "Detection"  — logs matched requests without blocking (use for initial tuning)
   EOT
-  type    = string
-  default = "Prevention"
+  type        = string
+  default     = "Prevention"
   validation {
     condition     = contains(["Prevention", "Detection"], var.waf_mode)
     error_message = "waf_mode must be 'Prevention' or 'Detection'."
@@ -224,6 +205,9 @@ variable "waf_managed_rule_sets" {
   type = list(object({
     type    = string
     version = string
+    # action: what the rule set does on a match; required by azurerm 4.x
+    # ("Block", "Log", "Allow", "Redirect").
+    action = optional(string, "Block")
     overrides = optional(list(object({
       rule_group_name = string
       rules = optional(list(object({
@@ -235,7 +219,7 @@ variable "waf_managed_rule_sets" {
     })), [])
   }))
   default = [
-    { type = "Microsoft_DefaultRuleSet",   version = "2.1", overrides = [] },
+    { type = "Microsoft_DefaultRuleSet", version = "2.1", overrides = [] },
     { type = "Microsoft_BotManagerRuleSet", version = "1.0", overrides = [] }
   ]
 }
@@ -286,15 +270,15 @@ variable "waf_custom_rules" {
   EOT
   type = map(object({
     priority  = number
-    rule_type = string  # "MatchRule" or "RateLimitRule"
-    action    = string  # "Allow", "Block", "Log", "Redirect"
+    rule_type = string # "MatchRule" or "RateLimitRule"
+    action    = string # "Allow", "Block", "Log", "Redirect"
     match_conditions = list(object({
-      match_variable     = string        # "RemoteAddr", "RequestUri", "RequestHeader", "QueryString", "PostArgs", "RequestBody", "RequestMethod", "RequestScheme"
-      operator           = string        # "IPMatch", "GeoMatch", "Equal", "Contains", "LessThan", "GreaterThan", "BeginsWith", "EndsWith", "RegEx", "Any"
+      match_variable     = string # "RemoteAddr", "RequestUri", "RequestHeader", "QueryString", "PostArgs", "RequestBody", "RequestMethod", "RequestScheme"
+      operator           = string # "IPMatch", "GeoMatch", "Equal", "Contains", "LessThan", "GreaterThan", "BeginsWith", "EndsWith", "RegEx", "Any"
       match_values       = list(string)
-      selector           = optional(string)       # required for RequestHeader, RequestCookie, QueryString, PostArgs
+      selector           = optional(string) # required for RequestHeader, RequestCookie, QueryString, PostArgs
       negation_condition = optional(bool, false)
-      transforms         = optional(list(string), [])  # "Lowercase", "Uppercase", "Trim", "UrlDecode", "UrlEncode", "RemoveNulls"
+      transforms         = optional(list(string), []) # "Lowercase", "Uppercase", "Trim", "UrlDecode", "UrlEncode", "RemoveNulls"
     }))
     rate_limit_duration_in_minutes = optional(number, 1)
     rate_limit_threshold           = optional(number, 1000)

@@ -1,38 +1,14 @@
 # Azure Container Apps Module
 # Creates one Container App Environment with multiple Container Apps.
-# Optionally creates an Azure Container Registry with automatic AcrPull RBAC.
-
-locals {
-  rg_name               = "rg-aca-${var.customer_short_name}-${var.environment}-${var.location_code}"
-  env_name              = "cae-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}"
-  log_workspace_name    = "law-aca-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}"
-  # ACR names: lowercase, no hyphens, 5-50 chars
-  acr_name              = "acr${var.customer_short_name}${var.environment}${var.location_code}${format("%03d", var.instance_number)}"
-}
-
-# =====================================================
-# RESOURCE GROUP
-# =====================================================
-
-resource "azurerm_resource_group" "aca" {
-  name     = local.rg_name
-  location = var.location
-  tags     = var.tags
-}
-
-# =====================================================
-# LOG ANALYTICS WORKSPACE
-# Required by Container App Environment for telemetry.
-# =====================================================
-
-resource "azurerm_log_analytics_workspace" "aca" {
-  name                = local.log_workspace_name
-  location            = azurerm_resource_group.aca.location
-  resource_group_name = azurerm_resource_group.aca.name
-  sku                 = "PerGB2018"
-  retention_in_days   = var.log_retention_days
-  tags                = var.tags
-}
+#
+# Per CONVENTIONS.md:
+#   #1 Names come from the caller: var.name_suffix (compute it in the root's
+#      locals) and the resource group from the resource-group module. This
+#      module creates no resource group of its own.
+#   #4 Logs go to a caller-supplied Log Analytics workspace (e.g. the shared
+#      landing-zone workspace) instead of a per-module workspace.
+# Registry: pass an existing registry (e.g. from the container-registry
+# module) in var.container_registry to wire image pulls and AcrPull RBAC.
 
 # =====================================================
 # CONTAINER APP ENVIRONMENT
@@ -41,28 +17,13 @@ resource "azurerm_log_analytics_workspace" "aca" {
 # =====================================================
 
 resource "azurerm_container_app_environment" "env" {
-  name                           = local.env_name
-  location                       = azurerm_resource_group.aca.location
-  resource_group_name            = azurerm_resource_group.aca.name
-  log_analytics_workspace_id     = azurerm_log_analytics_workspace.aca.id
+  name                           = "cae-${var.name_suffix}"
+  location                       = var.location
+  resource_group_name            = var.resource_group_name
+  log_analytics_workspace_id     = var.log_analytics_workspace_id
   infrastructure_subnet_id       = var.infrastructure_subnet_id
   internal_load_balancer_enabled = var.internal_load_balancer_enabled
   tags                           = var.tags
-}
-
-# =====================================================
-# CONTAINER REGISTRY (optional)
-# =====================================================
-
-resource "azurerm_container_registry" "acr" {
-  count = var.enable_container_registry ? 1 : 0
-
-  name                = local.acr_name
-  resource_group_name = azurerm_resource_group.aca.name
-  location            = azurerm_resource_group.aca.location
-  sku                 = var.acr_sku
-  admin_enabled       = false
-  tags                = var.tags
 }
 
 # =====================================================
@@ -73,9 +34,9 @@ resource "azurerm_container_registry" "acr" {
 resource "azurerm_container_app" "apps" {
   for_each = var.container_apps
 
-  name                         = "ca-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}-${each.key}"
+  name                         = "ca-${each.key}-${var.name_suffix}"
   container_app_environment_id = azurerm_container_app_environment.env.id
-  resource_group_name          = azurerm_resource_group.aca.name
+  resource_group_name          = var.resource_group_name
   revision_mode                = each.value.revision_mode
   tags                         = var.tags
 
@@ -93,11 +54,11 @@ resource "azurerm_container_app" "apps" {
     type = "SystemAssigned"
   }
 
-  # Wire up ACR only when the registry is enabled in this module
+  # Pull from the caller-supplied registry with the app's managed identity
   dynamic "registry" {
-    for_each = var.enable_container_registry ? [1] : []
+    for_each = var.container_registry != null ? [var.container_registry] : []
     content {
-      server   = azurerm_container_registry.acr[0].login_server
+      server   = registry.value.login_server
       identity = "system"
     }
   }
@@ -155,20 +116,18 @@ resource "azurerm_container_app" "apps" {
       }
     }
   }
-
-  depends_on = [azurerm_container_registry.acr]
 }
 
 # =====================================================
 # ACR PULL ROLE ASSIGNMENTS
 # Grant each container app's managed identity AcrPull on the registry.
-# Only created when enable_container_registry = true.
+# Only created when var.container_registry is set.
 # =====================================================
 
 resource "azurerm_role_assignment" "acr_pull" {
-  for_each = var.enable_container_registry ? var.container_apps : {}
+  for_each = var.container_registry != null ? var.container_apps : {}
 
-  scope                = azurerm_container_registry.acr[0].id
+  scope                = var.container_registry.id
   role_definition_name = "AcrPull"
   principal_id         = azurerm_container_app.apps[each.key].identity[0].principal_id
 }

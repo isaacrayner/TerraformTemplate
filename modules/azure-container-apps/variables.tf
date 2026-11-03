@@ -1,25 +1,12 @@
 # Input Variables — Azure Container Apps Module
 
 # =====================================================
-# CORE IDENTITY VARIABLES (same pattern across all modules)
+# NAMING AND PLACEMENT (CONVENTIONS.md #1)
 # =====================================================
 
-variable "customer_short_name" {
-  description = "Short name for the customer (3-8 lowercase characters)"
+variable "name_suffix" {
+  description = "Naming suffix computed in the calling root's locals, e.g. local.name_prefix. Resources are named cae-{suffix} and ca-{app key}-{suffix}."
   type        = string
-  validation {
-    condition     = can(regex("^[a-z]{3,8}$", var.customer_short_name))
-    error_message = "Customer short name must be 3-8 lowercase letters only."
-  }
-}
-
-variable "environment" {
-  description = "Environment name (prod, dev, staging, uat, test)"
-  type        = string
-  validation {
-    condition     = contains(["prod", "dev", "staging", "uat", "test"], var.environment)
-    error_message = "Environment must be one of: prod, dev, staging, uat, test."
-  }
 }
 
 variable "location" {
@@ -27,23 +14,9 @@ variable "location" {
   type        = string
 }
 
-variable "location_code" {
-  description = "Short code for the Azure region (e.g., 'eus' for East US)"
+variable "resource_group_name" {
+  description = "Resource group for the environment and apps. Create it with the resource-group module; this module does not create one."
   type        = string
-  validation {
-    condition     = can(regex("^[a-z]{2,4}$", var.location_code))
-    error_message = "Location code must be 2-4 lowercase letters."
-  }
-}
-
-variable "instance_number" {
-  description = "Instance number for resource naming (default: 1)"
-  type        = number
-  default     = 1
-  validation {
-    condition     = var.instance_number > 0 && var.instance_number < 1000
-    error_message = "Instance number must be between 1 and 999."
-  }
 }
 
 variable "tags" {
@@ -74,37 +47,26 @@ variable "internal_load_balancer_enabled" {
   default     = false
 }
 
-variable "log_retention_days" {
-  description = "Log Analytics workspace retention in days (30–730)"
-  type        = number
-  default     = 30
-  validation {
-    condition     = var.log_retention_days >= 30 && var.log_retention_days <= 730
-    error_message = "log_retention_days must be between 30 and 730."
-  }
+variable "log_analytics_workspace_id" {
+  description = "Log Analytics workspace that receives the environment's logs (CONVENTIONS.md #4). Null disables log shipping."
+  type        = string
+  default     = null
 }
 
 # =====================================================
 # CONTAINER REGISTRY (optional)
-# Enable to create an ACR and automatically grant all
-# container apps in this module AcrPull access via
-# SystemAssigned managed identity.
+# Pass a registry created elsewhere (e.g. the container-registry module).
+# Every app then pulls with its SystemAssigned identity and is granted
+# AcrPull on the registry.
 # =====================================================
 
-variable "enable_container_registry" {
-  description = "Create an Azure Container Registry for this environment"
-  type        = bool
-  default     = false
-}
-
-variable "acr_sku" {
-  description = "ACR SKU: 'Basic', 'Standard', or 'Premium'. Premium required for geo-replication and private endpoints."
-  type        = string
-  default     = "Standard"
-  validation {
-    condition     = contains(["Basic", "Standard", "Premium"], var.acr_sku)
-    error_message = "acr_sku must be 'Basic', 'Standard', or 'Premium'."
-  }
+variable "container_registry" {
+  description = "Existing registry to pull images from: { id, login_server }. Null means public images only."
+  type = object({
+    id           = string
+    login_server = string
+  })
+  default = null
 }
 
 # =====================================================

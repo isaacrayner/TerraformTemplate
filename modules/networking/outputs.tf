@@ -1,15 +1,5 @@
 # Output Values for Networking Module
 
-output "resource_group_id" {
-  description = "Resource Group ID for networking resources"
-  value       = azurerm_resource_group.network.id
-}
-
-output "resource_group_name" {
-  description = "Resource Group name for networking resources"
-  value       = azurerm_resource_group.network.name
-}
-
 output "vnet_id" {
   description = "Virtual Network resource ID"
   value       = azurerm_virtual_network.vnet.id
@@ -26,7 +16,7 @@ output "vnet_address_space" {
 }
 
 output "subnet_ids" {
-  description = "Map of subnet names to their resource IDs"
+  description = "Map of subnet keys to their resource IDs"
   value       = { for k, v in azurerm_subnet.subnets : k => v.id }
 }
 
@@ -36,7 +26,7 @@ output "subnet_names" {
 }
 
 output "nsg_ids" {
-  description = "Map of NSG names to their resource IDs"
+  description = "Map of NSG keys to their resource IDs"
   value       = { for k, v in azurerm_network_security_group.nsg : k => v.id }
 }
 

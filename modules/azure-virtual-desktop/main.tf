@@ -1,15 +1,22 @@
 # Azure Virtual Desktop Module
 # Supports multiple host pools — each pool has its own VM SKU, session count, and config.
 # Pattern: one workspace shared across all pools; each pool gets its own app group.
+#
+# Per CONVENTIONS.md #1, names come from the caller (var.name_suffix, computed
+# in the root's locals) and the resource group from the resource-group module.
+# This module creates no resource group of its own.
 
 locals {
-  rg_name        = "rg-avd-${var.customer_short_name}-${var.environment}-${var.location_code}"
-  workspace_name = "vdws-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}"
+  # var.host_pools is sensitive because it carries admin passwords, and a
+  # sensitive value cannot drive for_each (CONVENTIONS.md #5). Only pool keys
+  # and counts become visible; admin_password stays redacted by the provider
+  # schema on azurerm_windows_virtual_machine.
+  host_pools = nonsensitive(var.host_pools)
 
   # Flatten pools → individual session hosts so we can create VMs with for_each.
   # Key format: "{pool_key}-{zero-padded-index}" e.g. "general-001", "power-users-003"
   session_hosts = merge([
-    for pool_key, pool in var.host_pools : {
+    for pool_key, pool in local.host_pools : {
       for i in range(pool.session_host_count) :
       "${pool_key}-${format("%03d", i + 1)}" => {
         pool_key = pool_key
@@ -21,25 +28,15 @@ locals {
 }
 
 # =====================================================
-# RESOURCE GROUP
-# =====================================================
-
-resource "azurerm_resource_group" "avd" {
-  name     = local.rg_name
-  location = var.location
-  tags     = var.tags
-}
-
-# =====================================================
 # WORKSPACE
 # Users connect to this in the AVD client — one per deployment.
 # =====================================================
 
 resource "azurerm_virtual_desktop_workspace" "workspace" {
-  name                = local.workspace_name
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
-  friendly_name       = "${var.workspace_friendly_name} (${var.environment})"
+  name                = "vdws-${var.name_suffix}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  friendly_name       = var.workspace_friendly_name
   description         = var.workspace_description
   tags                = var.tags
 }
@@ -50,13 +47,13 @@ resource "azurerm_virtual_desktop_workspace" "workspace" {
 # =====================================================
 
 resource "azurerm_virtual_desktop_host_pool" "pools" {
-  for_each = var.host_pools
+  for_each = local.host_pools
 
-  name                = "vdpool-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}-${each.key}"
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
+  name                = "vdpool-${each.key}-${var.name_suffix}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
 
-  type             = each.value.type
+  type               = each.value.type
   load_balancer_type = each.value.load_balancer_type
   # Personal pools don't use session limits; 999999 is the Azure no-limit sentinel value.
   maximum_sessions_allowed = each.value.type == "Personal" ? 999999 : each.value.max_sessions_per_host
@@ -70,7 +67,7 @@ resource "azurerm_virtual_desktop_host_pool" "pools" {
 # Registration tokens — VMs use these to join the host pool.
 # Tokens expire 48 h after first apply; ignore_changes prevents re-creation on every run.
 resource "azurerm_virtual_desktop_host_pool_registration_info" "registration" {
-  for_each = var.host_pools
+  for_each = local.host_pools
 
   hostpool_id     = azurerm_virtual_desktop_host_pool.pools[each.key].id
   expiration_date = timeadd(timestamp(), "48h")
@@ -86,11 +83,11 @@ resource "azurerm_virtual_desktop_host_pool_registration_info" "registration" {
 # =====================================================
 
 resource "azurerm_virtual_desktop_application_group" "app_groups" {
-  for_each = var.host_pools
+  for_each = local.host_pools
 
-  name                = "vdag-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}-${each.key}"
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
+  name                = "vdag-${each.key}-${var.name_suffix}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
   type                = each.value.app_group_type
   host_pool_id        = azurerm_virtual_desktop_host_pool.pools[each.key].id
   friendly_name       = coalesce(each.value.friendly_name, "${each.key} Desktop")
@@ -99,7 +96,7 @@ resource "azurerm_virtual_desktop_application_group" "app_groups" {
 }
 
 resource "azurerm_virtual_desktop_workspace_application_group_association" "assoc" {
-  for_each = var.host_pools
+  for_each = local.host_pools
 
   workspace_id         = azurerm_virtual_desktop_workspace.workspace.id
   application_group_id = azurerm_virtual_desktop_application_group.app_groups[each.key].id
@@ -113,8 +110,8 @@ resource "azurerm_network_interface" "session_host_nic" {
   for_each = local.session_hosts
 
   name                = "nic-${each.value.pool.vm_name_prefix}${format("%03d", each.value.index)}"
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   tags                = var.tags
 
   ip_configuration {
@@ -134,8 +131,8 @@ resource "azurerm_windows_virtual_machine" "session_hosts" {
   for_each = local.session_hosts
 
   name                = "${each.value.pool.vm_name_prefix}${format("%03d", each.value.index)}"
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
+  location            = var.location
+  resource_group_name = var.resource_group_name
   size                = each.value.pool.vm_size
   admin_username      = each.value.pool.admin_username
   admin_password      = each.value.pool.admin_password
@@ -163,7 +160,7 @@ resource "azurerm_windows_virtual_machine" "session_hosts" {
 
   # Windows_Client enables Azure Hybrid Benefit for Windows 10/11 Enterprise AVD images.
   # Set license_type = null to use standard (non-HB) pricing.
-  license_type = each.value.license_type
+  license_type = each.value.pool.license_type
 
   identity {
     type = "SystemAssigned"
@@ -231,13 +228,13 @@ resource "azurerm_virtual_machine_extension" "avd_dsc" {
 
 resource "azurerm_virtual_desktop_scaling_plan" "scaling" {
   for_each = {
-    for k, v in var.host_pools : k => v
+    for k, v in local.host_pools : k => v
     if v.enable_scaling_plan && v.type == "Pooled"
   }
 
-  name                = "vdscaling-${var.customer_short_name}-${var.environment}-${var.location_code}-${format("%03d", var.instance_number)}-${each.key}"
-  location            = azurerm_resource_group.avd.location
-  resource_group_name = azurerm_resource_group.avd.name
+  name                = "vdscaling-${each.key}-${var.name_suffix}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
   friendly_name       = "${each.key} Scaling Plan"
   time_zone           = var.scaling_plan_timezone
 

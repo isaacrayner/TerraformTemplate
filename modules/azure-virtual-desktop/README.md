@@ -6,13 +6,26 @@ Deploys a complete Azure Virtual Desktop environment with support for **multiple
 
 | Resource | Count | Naming |
 |---|---|---|
-| Resource Group | 1 | `rg-avd-{customer}-{env}-{region}` |
-| AVD Workspace | 1 | `vdws-{customer}-{env}-{region}-{instance}` |
-| Host Pool | 1 per pool entry | `vdpool-{customer}-{env}-{region}-{instance}-{key}` |
-| Application Group | 1 per pool entry | `vdag-{customer}-{env}-{region}-{instance}-{key}` |
+| AVD Workspace | 1 | `vdws-{name_suffix}` |
+| Host Pool | 1 per pool entry | `vdpool-{key}-{name_suffix}` |
+| Application Group | 1 per pool entry | `vdag-{key}-{name_suffix}` |
 | Session Host VM | N per pool | `{vm_name_prefix}{001..N}` |
 | NIC | 1 per session host | `nic-{vm_name_prefix}{001..N}` |
-| Scaling Plan | 0–1 per Pooled pool | `vdscaling-{customer}-{env}-{region}-{instance}-{key}` |
+| Scaling Plan | 0–1 per Pooled pool | `vdscaling-{key}-{name_suffix}` |
+
+The resource group comes from the caller (`CONVENTIONS.md` #1). Wire diagnostics in the root with the `diagnostic-setting` module against `workspace_id`, `host_pool_ids` and `application_group_ids` (`CONVENTIONS.md` #4).
+
+## Inputs
+
+| Name | Type | Notes |
+|---|---|---|
+| `name_suffix` | string | Compute in the root, e.g. `local.name_prefix` |
+| `location` | string | |
+| `resource_group_name` | string | From the `resource-group` module |
+| `workspace_friendly_name` / `workspace_description` | string | Shown in the AVD client |
+| `host_pools` | map(object), sensitive | One entry per persona; see `variables.tf`. Each entry needs a resolved `subnet_id` |
+| `scaling_plan_timezone` / `scaling_plan_peak_start_time` / `scaling_plan_peak_end_time` | string | Used by Pooled pools with `enable_scaling_plan = true` |
+| `tags` | map(string) | |
 
 ## Quick start
 
@@ -20,13 +33,11 @@ Deploys a complete Azure Virtual Desktop environment with support for **multiple
 module "avd" {
   source = "../../modules/azure-virtual-desktop"
 
-  customer_short_name = var.customer_short_name
-  environment         = var.environment
+  name_suffix         = local.name_prefix
   location            = var.location
-  location_code       = var.location_code
-  instance_number     = var.instance_number
+  resource_group_name = local.resource_group_name
 
-  workspace_friendly_name = "Contoso Virtual Desktop"
+  workspace_friendly_name = "Contoso Virtual Desktop (${var.environment})"
 
   host_pools = var.avd_host_pools
 

@@ -1,15 +1,5 @@
 # Output Values — Azure Virtual Desktop Module
 
-output "resource_group_name" {
-  description = "Resource group name containing all AVD resources"
-  value       = azurerm_resource_group.avd.name
-}
-
-output "resource_group_id" {
-  description = "Resource group ID containing all AVD resources"
-  value       = azurerm_resource_group.avd.id
-}
-
 output "workspace_id" {
   description = "AVD Workspace resource ID"
   value       = azurerm_virtual_desktop_workspace.workspace.id
@@ -62,7 +52,7 @@ output "scaling_plan_ids" {
 
 output "session_host_count_per_pool" {
   description = "Map of pool keys to total session host count deployed"
-  value       = { for k, v in var.host_pools : k => v.session_host_count }
+  value       = { for k, v in local.host_pools : k => v.session_host_count }
 }
 
 output "total_session_host_count" {

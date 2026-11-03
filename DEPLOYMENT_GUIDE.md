@@ -47,10 +47,11 @@ customer_short_name = "contoso"     # 3-8 lowercase letters
 environment         = "prod"
 location            = "eastus"
 location_code       = "eus"
-subscription_id     = "your-subscription-id"
+landing_zone_subscription_id = "your-subscription-id"
+compute_subscription_id      = "your-subscription-id"
 
 # Enable required modules
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 
@@ -241,7 +242,7 @@ terraform init -reconfigure
 ### Pattern 1: Basic Landing Zone
 Minimal infrastructure for a new customer:
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 ```
@@ -249,7 +250,7 @@ enable_key_vault       = true
 ### Pattern 2: VM-Based Workload
 Infrastructure with virtual machines:
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 enable_virtual_machine = true
@@ -258,7 +259,7 @@ enable_virtual_machine = true
 ### Pattern 3: App Service with Caching
 Modern web application infrastructure:
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 enable_app_service     = true
@@ -269,7 +270,7 @@ enable_redis_cache     = true
 Global, highly available infrastructure:
 ```hcl
 # In each region deployment
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 enable_app_service     = true

@@ -39,8 +39,3 @@ output "waf_policy_name" {
   description = "WAF policy name (null when enable_waf = false)"
   value       = var.enable_waf ? azurerm_cdn_frontdoor_firewall_policy.waf[0].name : null
 }
-
-output "resource_group_name" {
-  description = "Resource group name for Front Door resources"
-  value       = azurerm_resource_group.fd.name
-}

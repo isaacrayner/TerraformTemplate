@@ -6,14 +6,29 @@ Deploys **Azure Front Door Standard/Premium** with WAF, multiple origin groups, 
 
 | Resource | Count | Naming |
 |---|---|---|
-| Resource Group | 1 | `rg-fd-{customer}-{env}-global` |
-| Front Door Profile | 1 | `fd-{customer}-{env}-global-{instance}` |
-| Endpoint | 1 per endpoint entry | `fde-{customer}-{env}-{instance}-{key}` |
+| Front Door Profile | 1 | `fd-{name_suffix}` |
+| Endpoint | 1 per endpoint entry | `fde-{key}-{name_suffix}` |
 | Origin Group | 1 per origin_groups entry | `og-{key}` |
 | Origin | N (flattened from groups) | `{origin_key}` |
 | Route | 1 per routes entry | `route-{key}` |
-| WAF Policy | 0–1 | `waf{customer}{env}{instance}` |
-| Security Policy | 0–1 | `secpol-{customer}-{env}` |
+| WAF Policy | 0–1 | `waf{name_suffix without hyphens}` |
+| Security Policy | 0–1 | `secpol-{name_suffix}` |
+
+The resource group comes from the caller (`CONVENTIONS.md` #1). Front Door is global, so there is no `location` input.
+
+## Inputs
+
+| Name | Type | Notes |
+|---|---|---|
+| `name_suffix` | string | Compute in the root, e.g. `local.name_prefix` |
+| `resource_group_name` | string | From the `resource-group` module |
+| `sku_name` | string | `Standard_AzureFrontDoor` or `Premium_AzureFrontDoor` |
+| `response_timeout_seconds` | number | |
+| `endpoints` / `origin_groups` / `routes` | map(object) | See `variables.tf` |
+| `enable_waf` / `waf_mode` | bool / string | |
+| `waf_managed_rule_sets` | list(object) | Premium only. Each set takes `type`, `version`, optional `action` (default `Block`) and `overrides` |
+| `waf_custom_rules` | list(object) | Standard and Premium |
+| `tags` | map(string) | |
 
 ## Quick start
 
@@ -21,10 +36,8 @@ Deploys **Azure Front Door Standard/Premium** with WAF, multiple origin groups, 
 module "front_door" {
   source = "../../modules/front-door"
 
-  customer_short_name = var.customer_short_name
-  environment         = var.environment
-  location            = var.location
-  instance_number     = var.instance_number
+  name_suffix         = local.name_prefix
+  resource_group_name = local.resource_group_name
   sku_name            = "Premium_AzureFrontDoor"
 
   origin_groups = var.front_door_origin_groups

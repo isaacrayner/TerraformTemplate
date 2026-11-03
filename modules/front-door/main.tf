@@ -1,10 +1,15 @@
 # Azure Front Door Standard/Premium + WAF Module
 # Uses azurerm_cdn_frontdoor_* resources (AFD v2 — not the legacy azurerm_frontdoor_*)
+#
+# Per CONVENTIONS.md #1, names come from the caller (var.name_suffix, computed
+# in the root's locals) and the resource group from the resource-group module.
+# This module creates no resource group of its own. Front Door is a global
+# service, so the profile has no location.
 
 locals {
-  profile_name = "fd-${var.customer_short_name}-${var.environment}-global-${format("%03d", var.instance_number)}"
+  profile_name = "fd-${var.name_suffix}"
   # WAF policy names: alphanumeric only, max 128 chars
-  waf_name     = "waf${var.customer_short_name}${var.environment}${format("%03d", var.instance_number)}"
+  waf_name = "waf${replace(var.name_suffix, "/[^0-9A-Za-z]/", "")}"
 
   # Flatten origin_groups[*].origins into a single for_each-able map.
   # Key: "{group_key}-{origin_key}" — e.g. "api-primary", "frontend-secondary"
@@ -25,23 +30,12 @@ locals {
 }
 
 # =====================================================
-# RESOURCE GROUP
-# Front Door is global; RG is in the specified location.
-# =====================================================
-
-resource "azurerm_resource_group" "fd" {
-  name     = "rg-fd-${var.customer_short_name}-${var.environment}-global"
-  location = var.location
-  tags     = var.tags
-}
-
-# =====================================================
 # FRONT DOOR PROFILE
 # =====================================================
 
 resource "azurerm_cdn_frontdoor_profile" "profile" {
   name                     = local.profile_name
-  resource_group_name      = azurerm_resource_group.fd.name
+  resource_group_name      = var.resource_group_name
   sku_name                 = var.sku_name
   response_timeout_seconds = var.response_timeout_seconds
   tags                     = var.tags
@@ -55,7 +49,7 @@ resource "azurerm_cdn_frontdoor_profile" "profile" {
 resource "azurerm_cdn_frontdoor_endpoint" "endpoints" {
   for_each = var.endpoints
 
-  name                     = "fde-${var.customer_short_name}-${var.environment}-${format("%03d", var.instance_number)}-${each.key}"
+  name                     = "fde-${each.key}-${var.name_suffix}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.profile.id
   enabled                  = each.value.enabled
   tags                     = var.tags
@@ -155,7 +149,7 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "waf" {
   count = local.create_waf ? 1 : 0
 
   name                = local.waf_name
-  resource_group_name = azurerm_resource_group.fd.name
+  resource_group_name = var.resource_group_name
   sku_name            = var.sku_name
   enabled             = true
   mode                = var.waf_mode
@@ -167,6 +161,7 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "waf" {
     content {
       type    = managed_rule.value.type
       version = managed_rule.value.version
+      action  = managed_rule.value.action
 
       dynamic "override" {
         for_each = managed_rule.value.overrides
@@ -222,7 +217,7 @@ resource "azurerm_cdn_frontdoor_firewall_policy" "waf" {
 resource "azurerm_cdn_frontdoor_security_policy" "waf_attach" {
   count = local.create_waf ? 1 : 0
 
-  name                     = "secpol-${var.customer_short_name}-${var.environment}"
+  name                     = "secpol-${var.name_suffix}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.profile.id
 
   security_policies {
