@@ -2,45 +2,23 @@
 # Application Insights, Log Analytics
 
 # =====================================================
-# LOG ANALYTICS WORKSPACE (Recommended for Production)
+# LOG ANALYTICS WORKSPACE
 # =====================================================
-# module "log_analytics" {
-#   count  = var.enable_log_analytics ? 1 : 0
-#   source = "../../modules/log-analytics"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   
-#   tags = var.tags
-# }
+# A customer can supply a shared/hub workspace ID instead. In that case this
+# deployment does not create a second workspace.
+module "log_analytics" {
+  count  = var.enable_log_analytics && var.log_analytics_workspace_id == null ? 1 : 0
+  source = "../../modules/log-analytics"
 
-# =====================================================
-# APPLICATION INSIGHTS (Optional)
-# =====================================================
-# module "application_insights" {
-#   for_each = var.application_insights_instances
-#   source   = "../../modules/application-insights"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   name_suffix         = each.key  # e.g., "web", "api", "worker"
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   
-#   application_type = each.value.application_type  # web, ios, java, other
-#   
-#   # Optional: Connect to Log Analytics
-#   # workspace_id = module.log_analytics[0].workspace_id
-#   
-#   tags = merge(var.tags, {
-#     Purpose = each.key
-#   })
-# }
+  name                = "log-${local.name_prefix}"
+  location            = var.location
+  resource_group_name = local.resource_group_name
+
+  retention_in_days = var.log_analytics_retention_in_days
+  daily_quota_gb    = var.log_analytics_daily_quota_gb
+
+  tags = var.tags
+}
+
+# Application Insights components are composed in applications.tf because they
+# share lifecycle and settings with the workloads that emit telemetry.

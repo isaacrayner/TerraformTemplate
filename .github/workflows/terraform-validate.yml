@@ -1,0 +1,36 @@
+name: Terraform validation
+
+on:
+  pull_request:
+    paths:
+      - "modules/**"
+      - "deployments/_template/**"
+      - "scripts/validate.sh"
+      - ".github/workflows/terraform-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "modules/**"
+      - "deployments/_template/**"
+      - "scripts/validate.sh"
+      - ".github/workflows/terraform-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Format and validate modules
+        run: ./scripts/validate.sh

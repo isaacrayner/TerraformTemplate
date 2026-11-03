@@ -72,12 +72,19 @@ variable "enable_networking" {
 variable "storage_accounts" {
   description = "Map of storage accounts to create. Key = suffix/purpose (e.g., 'data', 'logs', 'appX')"
   type = map(object({
-    tier              = string           # Standard or Premium
-    replication_type  = string           # LRS, GRS, ZRS, GZRS, RAGRS, RAGZRS
-    blob_containers   = list(string)     # List of container names to create
+    tier             = string       # Standard or Premium
+    replication_type = string       # LRS, GRS, ZRS, GZRS, RAGRS, RAGZRS
+    blob_containers  = list(string) # List of container names to create
+    network_access = optional(object({
+      default_action                = optional(string, "Deny")
+      bypass                        = optional(list(string), ["AzureServices"])
+      ip_rules                      = optional(list(string), [])
+      subnet_ids                    = optional(list(string), [])
+      public_network_access_enabled = optional(bool, true)
+    }), {}) # CONVENTIONS.md #2 — override per instance to relax network access deliberately
   }))
   default = {}
-  
+
   validation {
     condition     = alltrue([for k, v in var.storage_accounts : can(regex("^[a-z0-9]{1,10}$", k))])
     error_message = "Storage account keys (suffixes) must be 1-10 lowercase alphanumeric characters (no hyphens)."
@@ -91,11 +98,18 @@ variable "storage_accounts" {
 variable "key_vaults" {
   description = "Map of Key Vaults to create. Key = suffix/purpose (e.g., 'secrets', 'certs', 'appX')"
   type = map(object({
-    sku_name    = string  # standard or premium
-    enable_rbac = bool    # Use RBAC (recommended)
+    sku_name    = string # standard or premium
+    enable_rbac = bool   # Use RBAC (recommended)
+    network_access = optional(object({
+      default_action                = optional(string, "Deny")
+      bypass                        = optional(list(string), ["AzureServices"])
+      ip_rules                      = optional(list(string), [])
+      subnet_ids                    = optional(list(string), [])
+      public_network_access_enabled = optional(bool, true)
+    }), {}) # CONVENTIONS.md #2 — override per instance to relax network access deliberately
   }))
   default = {}
-  
+
   validation {
     condition     = alltrue([for k, v in var.key_vaults : can(regex("^[a-z0-9-]{1,12}$", k))])
     error_message = "Key Vault keys (suffixes) must be 1-12 lowercase alphanumeric characters or hyphens."
@@ -109,44 +123,59 @@ variable "key_vaults" {
 variable "sql_databases" {
   description = "Map of SQL Servers and Databases to create. Key = suffix/purpose (e.g., 'orders', 'inventory', 'appX')"
   type = map(object({
-    admin_username    = string           # SQL admin username
-    admin_password    = string           # SQL admin password (use Key Vault reference)
-    database_name     = string           # Name of the database
-    sku_name          = string           # Basic, S0, S1, S2, P1, P2, etc.
-    max_size_gb       = number           # Maximum database size
-    zone_redundant    = optional(bool)   # Enable zone redundancy (default: false)
+    admin_username                = string         # SQL admin username
+    admin_password                = string         # SQL admin password (use Key Vault reference)
+    database_name                 = string         # Name of the database
+    sku_name                      = string         # Basic, S0, S1, S2, P1, P2, etc.
+    max_size_gb                   = number         # Maximum database size
+    zone_redundant                = optional(bool) # Enable zone redundancy (default: false)
+    public_network_access_enabled = optional(bool) # Default false (CONVENTIONS.md #2) — set true only to deliberately use the public+firewall model instead of a private endpoint
   }))
   default   = {}
   sensitive = true
-  
+
   validation {
     condition     = alltrue([for k, v in var.sql_databases : can(regex("^[a-z0-9-]{1,15}$", k))])
     error_message = "SQL database keys (suffixes) must be 1-15 lowercase alphanumeric characters or hyphens."
   }
 }
 
-variable "enable_virtual_machine" {
-  description = "Enable virtual machine module"
+# =====================================================
+# DIAGNOSTICS
+# =====================================================
+
+variable "enable_log_analytics" {
+  description = "Create a deployment-local Log Analytics workspace when log_analytics_workspace_id is not supplied."
   type        = bool
-  default     = false
+  default     = true
 }
 
-variable "enable_app_service" {
-  description = "Enable App Service module"
-  type        = bool
-  default     = false
+variable "log_analytics_workspace_id" {
+  description = "Existing shared Log Analytics workspace resource ID. When set, this takes precedence and no deployment-local workspace is created."
+  type        = string
+  default     = null
 }
 
-variable "enable_front_door" {
-  description = "Enable Front Door module (for multi-region deployments)"
-  type        = bool
-  default     = false
+variable "log_analytics_retention_in_days" {
+  description = "Retention for a deployment-local Log Analytics workspace."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.log_analytics_retention_in_days >= 30 && var.log_analytics_retention_in_days <= 730
+    error_message = "log_analytics_retention_in_days must be between 30 and 730."
+  }
 }
 
-variable "enable_redis_cache" {
-  description = "Enable Redis Cache module"
-  type        = bool
-  default     = false
+variable "log_analytics_daily_quota_gb" {
+  description = "Daily ingestion quota for a deployment-local workspace. Use -1 for unlimited."
+  type        = number
+  default     = -1
+
+  validation {
+    condition     = var.log_analytics_daily_quota_gb == -1 || var.log_analytics_daily_quota_gb > 0
+    error_message = "log_analytics_daily_quota_gb must be -1 or greater than zero."
+  }
 }
 
 # =====================================================
@@ -191,59 +220,127 @@ variable "existing_resource_group_name" {
 }
 
 # =====================================================
-# VIRTUAL MACHINE VARIABLES (Optional)
+# STAGE 2 WORKLOADS
 # =====================================================
 
-variable "vm_size" {
-  description = "VM size (e.g., Standard_D2s_v3)"
-  type        = string
-  default     = "Standard_D2s_v3"
+variable "application_insights" {
+  description = "Application Insights components keyed by workload name. Requires an effective Log Analytics workspace."
+  type = map(object({
+    application_type     = optional(string, "web")
+    daily_data_cap_in_gb = optional(number)
+    retention_in_days    = optional(number, 90)
+    sampling_percentage  = optional(number, 100)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.application_insights) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Application Insights keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }
 
-variable "vm_admin_username" {
-  description = "Admin username for VM"
-  type        = string
-  default     = "azureadmin"
+variable "container_registries" {
+  description = "Container registries keyed by purpose."
+  type = map(object({
+    sku                           = optional(string, "Premium")
+    public_network_access_enabled = optional(bool, false)
+    export_policy_enabled         = optional(bool, false)
+    zone_redundancy_enabled       = optional(bool, false)
+    georeplications = optional(list(object({
+      location                = string
+      zone_redundancy_enabled = optional(bool, false)
+      tags                    = optional(map(string), {})
+    })), [])
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.container_registries) : can(regex("^[a-z0-9]{1,10}$", key))])
+    error_message = "Container Registry keys must be 1-10 lowercase alphanumeric characters."
+  }
 }
 
-# =====================================================
-# APP SERVICE VARIABLES (Optional)
-# =====================================================
+variable "web_apps" {
+  description = "Linux Web Apps keyed by workload name. Use Key Vault reference strings rather than literal secrets in app_settings."
+  type = map(object({
+    service_plan_sku_name         = optional(string, "P1v3")
+    public_network_access_enabled = optional(bool, false)
+    vnet_integration_subnet_key   = optional(string)
+    health_check_path             = optional(string)
+    application_insights_key      = optional(string)
+    container_registry_key        = optional(string)
+    application_stack = optional(object({
+      docker_image_name   = optional(string)
+      docker_registry_url = optional(string)
+      dotnet_version      = optional(string)
+      go_version          = optional(string)
+      java_server         = optional(string)
+      java_server_version = optional(string)
+      java_version        = optional(string)
+      node_version        = optional(string)
+      php_version         = optional(string)
+      python_version      = optional(string)
+    }))
+    app_settings = optional(map(string), {})
+  }))
+  default = {}
 
-variable "app_service_sku_name" {
-  description = "App Service Plan SKU (e.g., P1v2, S1, B1)"
-  type        = string
-  default     = "P1v2"
+  validation {
+    condition     = alltrue([for key in keys(var.web_apps) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Web App keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }
 
-# =====================================================
-# FRONT DOOR VARIABLES (Optional)
-# =====================================================
+variable "function_apps" {
+  description = "Linux Function Apps keyed by workload name. Each references a storage account key in storage_accounts."
+  type = map(object({
+    service_plan_sku_name = optional(string, "EP1")
+    storage_account_key   = string
+    runtime = object({
+      name    = string
+      version = string
+    })
+    public_network_access_enabled = optional(bool, false)
+    vnet_integration_subnet_key   = optional(string)
+    application_insights_key      = optional(string)
+    app_settings                  = optional(map(string), {})
+  }))
+  default = {}
 
-variable "front_door_sku_name" {
-  description = "Front Door SKU (Standard_AzureFrontDoor or Premium_AzureFrontDoor)"
-  type        = string
-  default     = "Standard_AzureFrontDoor"
+  validation {
+    condition     = alltrue([for key in keys(var.function_apps) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Function App keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }
 
-# =====================================================
-# REDIS CACHE VARIABLES (Optional)
-# =====================================================
+variable "virtual_machines" {
+  description = "SSH-only Linux VMs keyed by purpose."
+  type = map(object({
+    subnet_key                     = string
+    size                           = optional(string, "Standard_D2s_v5")
+    zone                           = optional(string)
+    admin_username                 = optional(string, "azureadmin")
+    admin_ssh_public_key           = string
+    private_ip_address             = optional(string)
+    public_ip_address_id           = optional(string)
+    accelerated_networking_enabled = optional(bool, false)
+    source_image = optional(object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = optional(string, "latest")
+      }), {
+      publisher = "Canonical"
+      offer     = "0001-com-ubuntu-server-jammy"
+      sku       = "22_04-lts-gen2"
+    })
+    os_disk_storage_account_type = optional(string, "Premium_LRS")
+    os_disk_size_gb              = optional(number)
+  }))
+  default = {}
 
-variable "redis_capacity" {
-  description = "Redis cache capacity"
-  type        = number
-  default     = 1
-}
-
-variable "redis_family" {
-  description = "Redis cache family (C for Basic/Standard, P for Premium)"
-  type        = string
-  default     = "C"
-}
-
-variable "redis_sku_name" {
-  description = "Redis cache SKU (Basic, Standard, Premium)"
-  type        = string
-  default     = "Standard"
+  validation {
+    condition     = alltrue([for key in keys(var.virtual_machines) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Virtual Machine keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }

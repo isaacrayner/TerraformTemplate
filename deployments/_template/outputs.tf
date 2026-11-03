@@ -17,8 +17,66 @@ output "subnet_ids" {
 }
 
 output "resource_group_name" {
-  description = "Resource group name for networking resources"
-  value       = var.enable_networking ? module.networking[0].resource_group_name : null
+  description = "Resource group name for this deployment"
+  value       = local.resource_group_name
+}
+
+output "log_analytics_workspace_id" {
+  description = "Resource ID of the created or supplied Log Analytics workspace."
+  value       = local.log_analytics_workspace_id
+}
+
+output "application_insights" {
+  description = "Application Insights resource IDs and app IDs by workload key."
+  value = {
+    for key, component in module.application_insights : key => {
+      id     = component.id
+      app_id = component.app_id
+    }
+  }
+}
+
+output "container_registries" {
+  description = "Container Registry IDs and login servers by key."
+  value = {
+    for key, registry in module.container_registry : key => {
+      id           = registry.id
+      login_server = registry.login_server
+    }
+  }
+}
+
+output "web_apps" {
+  description = "Linux Web App IDs, hostnames, and managed identity principal IDs by key."
+  value = {
+    for key, app in module.web_app : key => {
+      id               = app.id
+      default_hostname = app.default_hostname
+      principal_id     = app.principal_id
+    }
+  }
+}
+
+output "function_apps" {
+  description = "Linux Function App IDs, hostnames, and managed identity principal IDs by key."
+  value = {
+    for key, app in module.function_app : key => {
+      id               = app.id
+      default_hostname = app.default_hostname
+      principal_id     = app.principal_id
+    }
+  }
+}
+
+output "virtual_machines" {
+  description = "Linux VM IDs, private IPs, and managed identity principal IDs by key."
+  value = {
+    for key, vm in module.virtual_machine : key => {
+      id                 = vm.id
+      private_ip_address = vm.private_ip_address
+      principal_id       = vm.principal_id
+    }
+  }
 }
 
 # Storage Account Outputs (Multiple Instances)
@@ -26,10 +84,10 @@ output "storage_accounts" {
   description = "Map of storage account names and their details"
   value = {
     for key, sa in module.storage_account : key => {
-      name              = sa.storage_account_name
-      id                = sa.storage_account_id
-      blob_endpoint     = sa.primary_blob_endpoint
-      purpose           = key
+      name          = sa.storage_account_name
+      id            = sa.storage_account_id
+      blob_endpoint = sa.primary_blob_endpoint
+      purpose       = key
     }
   }
 }
@@ -59,7 +117,7 @@ output "sql_databases" {
       purpose       = key
     }
   }
-  sensitive = true  # Contains sensitive server info
+  sensitive = true # Contains sensitive server info
 }
 
 # Deployment Info
@@ -73,12 +131,18 @@ output "deployment_info" {
     resource_counts = {
       storage_accounts = length(var.storage_accounts)
       key_vaults       = length(var.key_vaults)
-      sql_databases    = length(var.sql_databases)
-      networking       = var.enable_networking ? 1 : 0
-      virtual_machines = var.enable_virtual_machine ? 1 : 0
-      app_services     = var.enable_app_service ? 1 : 0
-      front_doors      = var.enable_front_door ? 1 : 0
-      redis_caches     = var.enable_redis_cache ? 1 : 0
+      # var.sql_databases is sensitive (it carries admin passwords) — a bare
+      # length() of it taints this entire otherwise-harmless summary output.
+      # nonsensitive() here is safe: only the count leaves this expression,
+      # not any credential.
+      sql_databases        = nonsensitive(length(var.sql_databases))
+      networking           = var.enable_networking ? 1 : 0
+      log_analytics        = local.log_analytics_workspace_id != null ? 1 : 0
+      application_insights = length(var.application_insights)
+      container_registries = length(var.container_registries)
+      web_apps             = length(var.web_apps)
+      function_apps        = length(var.function_apps)
+      virtual_machines     = length(var.virtual_machines)
     }
   }
 }

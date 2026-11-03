@@ -1,20 +1,11 @@
 # Input Variables for SQL Database Module
 
-variable "customer_short_name" {
-  description = "Short name for the customer (3-8 lowercase characters)"
+variable "name" {
+  description = "Exact SQL Server name (lowercase, numbers, hyphens). Compute it in the calling root's locals — see CONVENTIONS.md #1."
   type        = string
   validation {
-    condition     = can(regex("^[a-z]{3,8}$", var.customer_short_name))
-    error_message = "Customer short name must be 3-8 lowercase letters only."
-  }
-}
-
-variable "environment" {
-  description = "Environment name (e.g., prod, dev, staging)"
-  type        = string
-  validation {
-    condition     = contains(["prod", "dev", "staging", "uat", "test"], var.environment)
-    error_message = "Environment must be one of: prod, dev, staging, uat, test."
+    condition     = can(regex("^[a-z0-9-]{1,63}$", var.name))
+    error_message = "SQL Server name must be 1-63 lowercase alphanumeric characters or hyphens."
   }
 }
 
@@ -23,34 +14,9 @@ variable "location" {
   type        = string
 }
 
-variable "location_code" {
-  description = "Short code for the Azure region (e.g., eus for East US)"
-  type        = string
-  validation {
-    condition     = can(regex("^[a-z]{2,4}$", var.location_code))
-    error_message = "Location code must be 2-4 lowercase letters."
-  }
-}
-
 variable "resource_group_name" {
   description = "Name of the resource group where SQL Server will be created"
   type        = string
-}
-
-variable "instance_number" {
-  description = "Instance number for resource naming (default: 1)"
-  type        = number
-  default     = 1
-}
-
-variable "name_suffix" {
-  description = "Optional suffix for resource name (e.g., 'appX', 'orders', 'inventory'). Used to identify purpose/application."
-  type        = string
-  default     = ""
-  validation {
-    condition     = var.name_suffix == "" || can(regex("^[a-z0-9-]{1,15}$", var.name_suffix))
-    error_message = "Name suffix must be 1-15 lowercase alphanumeric characters or hyphens."
-  }
 }
 
 variable "sql_version" {
@@ -128,8 +94,14 @@ variable "azure_ad_only_auth" {
   default     = false
 }
 
+variable "public_network_access_enabled" {
+  description = "Whether the server's public endpoint exists at all. Defaults to false — CONVENTIONS.md #2's secure-by-default rule. SQL Server has no partial-firewall equivalent to Key Vault/Storage's deny-by-default network ACL: it's either a private-endpoint-only server, or a public one gated by allowed_ip_ranges/allow_azure_services. Set true only when you're deliberately choosing the public+firewall model over a private endpoint."
+  type        = bool
+  default     = false
+}
+
 variable "allowed_ip_ranges" {
-  description = "List of allowed IP ranges for firewall rules"
+  description = "List of allowed IP ranges for firewall rules. Only relevant when public_network_access_enabled = true."
   type = list(object({
     name             = string
     start_ip_address = string
@@ -139,7 +111,7 @@ variable "allowed_ip_ranges" {
 }
 
 variable "allow_azure_services" {
-  description = "Allow Azure services to access the SQL Server"
+  description = "Allow Azure services to access the SQL Server. Only relevant when public_network_access_enabled = true."
   type        = bool
   default     = true
 }

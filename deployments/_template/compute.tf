@@ -1,67 +1,36 @@
-# Compute Resources
-# VMs, App Services, Azure Functions
-# Typically have fewer instances but may be complex configs
+# SSH-only Linux VMs. Public IP resources are composed separately and passed by
+# ID; the default is a private-only NIC.
 
-# =====================================================
-# VIRTUAL MACHINES (Optional)
-# =====================================================
-# Uncomment and configure as needed
-# module "virtual_machine" {
-#   count  = var.enable_virtual_machine ? 1 : 0
-#   source = "../../modules/virtual-machine"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   subnet_id           = module.networking[0].subnet_ids["vms"]
-#   
-#   vm_size         = var.vm_size
-#   admin_username  = var.vm_admin_username
-#   
-#   tags = var.tags
-# }
+module "virtual_machine" {
+  for_each = var.virtual_machines
+  source   = "../../modules/virtual-machine"
 
-# =====================================================
-# APP SERVICE (Optional)
-# =====================================================
-# Uncomment and configure as needed
-# module "app_service" {
-#   count  = var.enable_app_service ? 1 : 0
-#   source = "../../modules/app-service"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   
-#   sku_name = var.app_service_sku_name
-#   
-#   tags = var.tags
-# }
+  name                   = "vm-${each.key}-${local.name_prefix}"
+  network_interface_name = "nic-${each.key}-${local.name_prefix}"
+  location               = var.location
+  resource_group_name    = local.resource_group_name
+  subnet_id              = module.networking[0].subnet_ids[each.value.subnet_key]
 
-# =====================================================
-# AZURE FUNCTIONS (Optional)
-# =====================================================
-# Uncomment and configure as needed
-# module "azure_functions" {
-#   count  = var.enable_azure_functions ? 1 : 0
-#   source = "../../modules/azure-functions"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name   = module.networking[0].resource_group_name
-#   storage_account_name  = module.storage_account["functions"].storage_account_name
-#   
-#   tags = var.tags
-# }
+  size                           = each.value.size
+  zone                           = each.value.zone
+  admin_username                 = each.value.admin_username
+  admin_ssh_public_key           = each.value.admin_ssh_public_key
+  private_ip_address             = each.value.private_ip_address
+  public_ip_address_id           = each.value.public_ip_address_id
+  accelerated_networking_enabled = each.value.accelerated_networking_enabled
+  source_image                   = each.value.source_image
+  os_disk_storage_account_type   = each.value.os_disk_storage_account_type
+  os_disk_size_gb                = each.value.os_disk_size_gb
+
+  tags = merge(var.tags, { Purpose = each.key })
+}
+
+module "diag_virtual_machine" {
+  for_each = local.log_analytics_workspace_id != null ? var.virtual_machines : {}
+  source   = "../../modules/diagnostic-setting"
+
+  name                       = "diag-${module.virtual_machine[each.key].name}"
+  target_resource_id         = module.virtual_machine[each.key].id
+  log_analytics_workspace_id = local.log_analytics_workspace_id
+  log_category_groups        = []
+}

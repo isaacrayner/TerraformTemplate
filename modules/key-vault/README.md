@@ -1,108 +1,84 @@
 # Key Vault Module
 
-This module creates an Azure Key Vault with security best practices enabled.
-
-## Resources Created
-
-- Azure Key Vault
-- Access policies (optional)
-- RBAC role assignments (optional)
+Creates an Azure Key Vault with RBAC authorization, soft delete, purge
+protection, and a deny-by-default network ACL — the secure defaults, all
+override-able. See `CONVENTIONS.md` #1 (naming) and #2 (network access) for
+the rationale behind this module's interface.
 
 ## Usage
 
 ```hcl
 module "key_vault" {
   source = "../../modules/key-vault"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  
-  enable_rbac_authorization = true
-  enabled_for_disk_encryption = true
-  
-  tags = {
-    Environment = "Production"
-    ManagedBy   = "Terraform"
+
+  name                 = "kv-contoso-prod-uks-001"
+  location             = var.location
+  resource_group_name  = module.resource_groups.names["network"]
+  tenant_id            = data.azurerm_client_config.current.tenant_id
+
+  network_access = {
+    subnet_ids = [module.networking.subnet_ids["privatelink"]]
   }
+
+  tags = local.default_tags
 }
+```
+
+Relax network access for a cost-sensitive dev/test customer (CONVENTIONS.md
+#2's "deliberate, visible choice in tfvars" principle):
+
+```hcl
+  network_access = {
+    default_action = "Allow"
+  }
 ```
 
 ## Required Variables
 
 | Variable | Type | Description |
-|----------|------|-------------|
-| `customer_short_name` | string | Short name for customer (3-8 lowercase chars) |
-| `environment` | string | Environment (prod, dev, staging) |
+|---|---|---|
+| `name` | string | Exact Key Vault name (3-24 chars). Compute in the root — see `CONVENTIONS.md` #1. |
 | `location` | string | Azure region |
-| `location_code` | string | Short region code |
 | `resource_group_name` | string | Resource group name |
 | `tenant_id` | string | Azure AD tenant ID |
 
 ## Optional Variables
 
 | Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `instance_number` | number | 1 | Instance number for naming |
-| `sku_name` | string | "standard" | Key Vault SKU (standard/premium) |
-| `enable_rbac_authorization` | bool | true | Use RBAC instead of access policies |
-| `enabled_for_disk_encryption` | bool | true | Enable for Azure Disk Encryption |
-| `enabled_for_deployment` | bool | false | Enable for VM deployment |
-| `enabled_for_template_deployment` | bool | false | Enable for ARM template deployment |
-| `soft_delete_retention_days` | number | 90 | Soft delete retention period |
-| `purge_protection_enabled` | bool | true | Enable purge protection |
-| `tags` | map(string) | {} | Tags to apply |
+|---|---|---|---|
+| `sku_name` | string | `"standard"` | `standard` or `premium` |
+| `enable_rbac_authorization` | bool | `true` | Use RBAC instead of access policies |
+| `enabled_for_disk_encryption` | bool | `true` | |
+| `enabled_for_deployment` | bool | `false` | |
+| `enabled_for_template_deployment` | bool | `false` | |
+| `soft_delete_retention_days` | number | `90` | 7-90 |
+| `purge_protection_enabled` | bool | `true` | |
+| `network_access` | object | see below | CONVENTIONS.md #2 shape |
+| `tags` | map(string) | `{}` | |
+
+`network_access` defaults: `default_action = "Deny"`, `bypass = ["AzureServices"]`,
+`ip_rules = []`, `subnet_ids = []`, `public_network_access_enabled = true`
+(endpoint present, firewalled — not disabled; see CONVENTIONS.md #2 for why).
 
 ## Outputs
 
 | Output | Description |
-|--------|-------------|
+|---|---|
 | `key_vault_id` | Key Vault resource ID |
 | `key_vault_name` | Key Vault name |
 | `key_vault_uri` | Key Vault URI |
+| `key_vault_tenant_id` | Tenant ID |
 
-## Naming Convention
+## Gotcha
 
-- Key Vault: `kv-{customer}-{env}-{region}-{instance}`
-  - Example: `kv-contoso-prod-eus-001`
-  - Must be 3-24 characters
+`azurerm_key_vault.network_acls.bypass` takes a single string (`"AzureServices"`
+or `"None"`), unlike Storage Account's set(string) equivalent — this module
+takes the first entry of `network_access.bypass` for you, so pass a
+single-item list.
 
-## Security Features
+## Status
 
-- RBAC authorization (recommended)
-- Soft delete enabled (90-day default)
-- Purge protection enabled
-- Network ACLs configurable
-- Private endpoint support (optional)
-
-## Example: With Access Policies
-
-```hcl
-module "key_vault" {
-  source = "../../modules/key-vault"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  
-  enable_rbac_authorization = false
-  
-  access_policies = [
-    {
-      object_id = data.azurerm_client_config.current.object_id
-      secret_permissions = ["Get", "List", "Set", "Delete"]
-      key_permissions    = ["Get", "List", "Create", "Delete"]
-    }
-  ]
-  
-  tags = var.tags
-}
-```
+Production Ready. Uplifted 2026-08-14 to `CONVENTIONS.md`'s naming and
+network-access pattern — if you have root code written against the older
+`customer_short_name`/`environment`/`location_code`/`instance_number`/`name_suffix`
+interface, it needs updating to pass `name` directly.

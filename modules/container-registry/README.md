@@ -1,54 +1,25 @@
-# Azure Container Registry Module
+# Container Registry
 
-This module creates an Azure Container Registry (ACR) for storing Docker images and OCI artifacts.
-
-## Resources Created
-
-- Azure Container Registry
-- Private endpoint (optional)
-- Geo-replication (Premium tier)
-
-## Usage
+Creates one Azure Container Registry with admin and anonymous access disabled,
+a system-assigned identity, and private network access by default.
 
 ```hcl
 module "container_registry" {
-  source = "../../modules/container-registry"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  
-  sku                  = "Premium"  # Basic, Standard, Premium
-  admin_enabled        = false      # Use service principal or managed identity
-  public_network_access = false
-  
-  tags = var.tags
+  source = "git::https://github.com/isaacrayner/TerraformTemplate.git//modules/container-registry?ref=v1.0.0"
+
+  name                = "acrcontosoproduks001"
+  location            = "uksouth"
+  resource_group_name = module.resource_groups.names["main"]
+  sku                 = "Premium"
+  tags                = var.tags
 }
 ```
 
-## Naming Convention
+`Premium` is the default because disabling public access, geo-replication,
+zone redundancy, and export-policy controls are Premium capabilities. A lower
+SKU requires public access and excludes those features.
 
-- Container Registry: `acr{customer}{env}{region}{instance}`
-  - Example: `acrcontosoprodeus001` (no hyphens, lowercase, alphanumeric only)
-  - Must be globally unique
-
-## SKU Tiers
-
-| Tier | Storage | Webhooks | Geo-replication | Use Case |
-|------|---------|----------|-----------------|----------|
-| Basic | 10 GB | 2 | No | Dev/test |
-| Standard | 100 GB | 10 | No | Small production |
-| Premium | 500 GB | 500 | Yes | Enterprise production |
-
-## Features
-
-- Private Docker registry
-- Geo-replication (Premium)
-- Image vulnerability scanning
-- Content trust
-- Private endpoints
-- Azure AD authentication
-- Webhooks for CI/CD
+Outputs are `id`, `name`, `login_server`, and the system identity
+`principal_id`. Grant workloads `AcrPull` in the calling root. Create private
+endpoints, DNS, diagnostics, and role assignments with the corresponding
+composition modules.

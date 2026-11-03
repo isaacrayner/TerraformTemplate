@@ -1,60 +1,32 @@
-# Azure Functions Module
+# Linux Azure Functions
 
-This module creates an Azure Function App with App Service Plan (Consumption or Dedicated).
-
-## Resources Created
-
-- Azure Function App
-- App Service Plan (Consumption/Premium/Dedicated)
-- Storage Account for function app
-- Application Insights (optional)
-
-## Usage
+Creates one Linux Function App and, by default, an Elastic Premium plan. Supply
+`service_plan_id` to reuse a compatible Linux plan.
 
 ```hcl
-module "function_app" {
-  source = "../../modules/azure-functions"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name     = module.networking.resource_group_name
-  storage_account_name    = module.storage_account.storage_account_name
-  storage_account_key     = module.storage_account.primary_access_key
-  
-  runtime_stack      = "dotnet"  # dotnet, node, python, java
-  runtime_version    = "6"
-  
-  plan_type          = "consumption"  # consumption, premium, dedicated
-  
-  app_settings = {
-    "FUNCTIONS_WORKER_RUNTIME" = "dotnet"
-    "MyAppSetting"             = "value"
+module "function" {
+  source = "git::https://github.com/isaacrayner/TerraformTemplate.git//modules/azure-functions?ref=v1.0.0"
+
+  name                = "func-worker-contoso-prod-uks-001"
+  service_plan_name   = "asp-func-contoso-prod-uks-001"
+  location            = "uksouth"
+  resource_group_name = module.resource_groups.names["main"]
+
+  storage_account_name       = module.storage.storage_account_name
+  storage_account_access_key = module.storage.primary_access_key
+  runtime = {
+    name    = "node"
+    version = "20"
   }
-  
-  tags = var.tags
+
+  application_insights_connection_string = module.application_insights.connection_string
+  tags                                   = var.tags
 }
 ```
 
-## Naming Convention
-
-- Function App: `func-{customer}-{env}-{region}-{instance}`
-- App Service Plan: `asp-func-{customer}-{env}-{region}-{instance}`
-
-## Plan Types
-
-| Type | Use Case | Scaling | Cost |
-|------|----------|---------|------|
-| Consumption | Event-driven, sporadic | Automatic | Pay-per-execution |
-| Premium | VNet integration, no cold start | Automatic | Higher baseline |
-| Dedicated | Existing App Service Plan | Manual | Pay for plan |
-
-## Supported Runtimes
-
-- .NET (6, 7, 8)
-- Node.js (16, 18, 20)
-- Python (3.8, 3.9, 3.10, 3.11)
-- Java (8, 11, 17)
-- PowerShell (7.2)
+Supported runtime names are `dotnet`, `dotnet-isolated`, `java`, `node`,
+`powershell`, and `python`; the caller supplies a version supported in the
+target Azure region. Public access defaults off and basic publishing
+authentication is disabled. Storage keys and app settings remain sensitive in
+Terraform state; use a protected remote backend and prefer Key Vault references
+for application secrets.

@@ -1,6 +1,8 @@
 # Azure Terraform Template
 
-A reusable, modular Terraform template for deploying Azure infrastructure across multiple customers and regions. Designed for Azure architects who need to rapidly deploy standardized landing zones and infrastructure.
+A versioned Terraform module catalog and customer deployment starter for Azure.
+Fourteen modules are currently implemented and validated; the remaining catalog
+entries are staged design candidates, not callable Terraform modules.
 
 ## 🚀 Quick Start
 
@@ -57,7 +59,9 @@ TerraformTemplate/
 | [.azure-pipelines/terraform-deploy.yml](.azure-pipelines/terraform-deploy.yml) | Complete CI/CD pipeline example |
 | [.github/copilot-instructions.md](.github/copilot-instructions.md) | Full template documentation (auto-detected by GitHub Copilot) |
 | [REGION_CODES.md](REGION_CODES.md) | Azure region codes reference |
-| [MODULES_INDEX.md](MODULES_INDEX.md) | Complete catalog of all 18 modules |
+| [MODULES_INDEX.md](MODULES_INDEX.md) | Truthful implementation status for all 28 catalog entries |
+| [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) | Staged path from foundation to full catalog |
+| [MODULE_RELEASES.md](MODULE_RELEASES.md) | Versioning and cross-customer consumption policy |
 | `modules/*/README.md` | Individual module documentation |
 
 ## 🏗️ Architecture
@@ -105,7 +109,7 @@ TerraformTemplate/
 ✅ **Azure Best Practices** - Security, naming, and compliance built-in  
 ✅ **Consistent Naming** - Standardized naming convention across all resources  
 ✅ **GitHub Copilot Optimized** - Comprehensive LLM instructions for AI assistance  
-✅ **Production Ready** - Remote state support, tagging, RBAC  
+✅ **Release-oriented** - Immutable Git tags for customer consumption  
 ✅ **Fully Documented** - READMEs for every module and deployment pattern  
 
 ## 📋 Naming Convention
@@ -124,26 +128,36 @@ All resources follow Azure best practices:
 
 ## 🔧 Usage Examples
 
-### Example 1: Basic Landing Zone
-Deploy core infrastructure (VNet, Storage, Key Vault):
+The local `../../modules/...` sources below are for developing the deployment
+template inside this repository. Customer repositories should use versioned Git
+sources as documented in [MODULE_RELEASES.md](MODULE_RELEASES.md).
+
+### Example 1: Baseline deployment
+
+Maps control repeatable resources; an empty map creates none. These are real
+inputs in the current deployment starter:
+
 ```hcl
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
+enable_networking   = true
+enable_log_analytics = true
+
+storage_accounts = {
+  data = {
+    tier             = "Standard"
+    replication_type = "LRS"
+    blob_containers  = ["data"]
+  }
+}
+
+key_vaults   = {}
+sql_databases = {}
 ```
 
-### Example 2: App Service Environment
-Deploy web application infrastructure:
-```hcl
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
-enable_app_service     = true
-enable_redis_cache     = true
-```
+### Example 2: Separate regional state
 
-### Example 3: Multi-Region with Front Door
-Deploy across multiple regions with global load balancing:
+Create independent regional roots. Global edge services remain Stage 4
+candidates and should be added only after their modules are implemented.
+
 ```bash
 # Create East US deployment
 cd deployments
@@ -153,7 +167,6 @@ cp -r _template contoso-eastus
 # Create West Europe deployment
 cp -r _template contoso-westeurope
 # Configure for West Europe
-# Enable Front Door in one region
 ```
 
 ## 🌍 Multi-Region Deployment

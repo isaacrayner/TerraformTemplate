@@ -1,50 +1,61 @@
 # Azure SQL Database Module
 
-This module creates an Azure SQL Server and SQL Database with security best practices.
+Creates an Azure SQL Server + Database with TLS 1.2 minimum, Azure AD admin
+support, threat detection, and — the significant change from earlier versions
+of this module — **no public endpoint by default**. See `CONVENTIONS.md` #1
+(naming) and #2 (network access).
 
-## Resources Created
-
-- Azure SQL Server
-- Azure SQL Database
-- Firewall rules (optional)
-- Private endpoint (optional)
-- Transparent Data Encryption (enabled by default)
-
-## Usage
+## Usage — private (default)
 
 ```hcl
 module "sql_database" {
   source = "../../modules/sql-database"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  
+
+  name                 = "sql-contoso-prod-uks-001"
+  location             = var.location
+  resource_group_name  = module.resource_groups.names["network"]
+
   admin_username = "sqladmin"
   admin_password = data.azurerm_key_vault_secret.sql_password.value
-  
-  database_name = "appdb"
-  sku_name      = "S1"
-  
-  enable_azure_ad_admin = true
-  azure_ad_admin_login  = "sql-admins@contoso.com"
-  azure_ad_admin_object_id = "00000000-0000-0000-0000-000000000000"
-  
-  tags = var.tags
+  database_name  = "appdb"
+
+  tags = local.default_tags
+}
+
+module "pe_sql" {
+  source = "../../modules/private-endpoints"
+
+  name                 = "pep-sql-contoso-prod-uks-001"
+  resource_group_name  = module.resource_groups.names["network"]
+  location             = var.location
+  subnet_id            = module.networking.subnet_ids["privatelink"]
+  target_resource_id   = module.sql_database.sql_server_id
+  subresource_names    = ["sqlServer"]
+  private_dns_zone_ids = [module.dns_sql.zone_id]
+}
+```
+
+## Usage — public + firewall (deliberate opt-out, e.g. no PE budget)
+
+```hcl
+module "sql_database" {
+  source = "../../modules/sql-database"
+  # ...
+
+  public_network_access_enabled = true
+  allow_azure_services          = true
+  allowed_ip_ranges = [
+    { name = "Office", start_ip_address = "203.0.113.0", end_ip_address = "203.0.113.255" }
+  ]
 }
 ```
 
 ## Required Variables
 
 | Variable | Type | Description |
-|----------|------|-------------|
-| `customer_short_name` | string | Short name for customer (3-8 lowercase chars) |
-| `environment` | string | Environment (prod, dev, staging) |
+|---|---|---|
+| `name` | string | Exact SQL Server name. Compute in the root — see `CONVENTIONS.md` #1. |
 | `location` | string | Azure region |
-| `location_code` | string | Short region code |
 | `resource_group_name` | string | Resource group name |
 | `admin_username` | string | SQL Server admin username |
 | `admin_password` | string | SQL Server admin password (use Key Vault!) |
@@ -53,94 +64,43 @@ module "sql_database" {
 ## Optional Variables
 
 | Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `instance_number` | number | 1 | Instance number for naming |
-| `sql_version` | string | "12.0" | SQL Server version |
-| `sku_name` | string | "S1" | Database SKU (Basic, S0-S12, P1-P15) |
-| `max_size_gb` | number | 250 | Maximum database size in GB |
-| `enable_azure_ad_admin` | bool | false | Enable Azure AD authentication |
-| `allowed_ip_ranges` | list(object) | [] | Firewall rules for allowed IPs |
-| `enable_advanced_threat_protection` | bool | true | Enable threat detection |
-| `tags` | map(string) | {} | Tags to apply |
+|---|---|---|---|
+| `sql_version` | string | `"12.0"` | |
+| `sku_name` | string | `"S1"` | Basic, S0-S12, P1-P15 |
+| `max_size_gb` | number | `250` | |
+| `public_network_access_enabled` | bool | **`false`** | See "Why this defaults false" below |
+| `allowed_ip_ranges` | list(object) | `[]` | Only takes effect if `public_network_access_enabled = true` |
+| `allow_azure_services` | bool | `true` | Only takes effect if `public_network_access_enabled = true` |
+| `enable_azure_ad_admin` | bool | `false` | |
+| `enable_advanced_threat_protection` | bool | `true` | |
+| `tags` | map(string) | `{}` | |
 
 ## Outputs
 
 | Output | Description |
-|--------|-------------|
-| `sql_server_id` | SQL Server resource ID |
+|---|---|
+| `sql_server_id` | SQL Server resource ID — feed to `private-endpoints`' `target_resource_id` |
 | `sql_server_name` | SQL Server name |
-| `sql_server_fqdn` | SQL Server fully qualified domain name |
-| `sql_database_id` | SQL Database resource ID |
-| `sql_database_name` | SQL Database name |
+| `sql_server_fqdn` | Fully qualified domain name |
+| `database_id` | SQL Database resource ID |
+| `database_name` | SQL Database name |
 | `connection_string` | Connection string (sensitive) |
 
-## Naming Convention
+## Why `public_network_access_enabled` defaults false
 
-- SQL Server: `sql-{customer}-{env}-{region}-{instance}`
-  - Example: `sql-contoso-prod-eus-001`
-- SQL Database: `{database_name}` (custom name)
+`azurerm_mssql_server` has no deny-by-default network ACL like Key Vault or
+Storage Account — it's binary: a public endpoint gated by IP allow-list
+firewall rules, or no public endpoint at all (private-endpoint-only). Per
+`CONVENTIONS.md` #2, the secure default wins unless the caller opts out
+visibly. If you're relying on `allowed_ip_ranges`/`allow_azure_services`,
+you must also set `public_network_access_enabled = true` — that pairing is
+deliberate, not a bug.
 
-## Security Features
+## Status
 
-- Azure AD authentication support
-- TDE (Transparent Data Encryption) enabled by default
-- Advanced Threat Protection available
-- Firewall rules for IP restrictions
-- Private endpoint support (optional)
-- Audit logging enabled
-- Minimum TLS 1.2
-
-## Example: With Azure AD Admin
-
-```hcl
-module "sql_database" {
-  source = "../../modules/sql-database"
-  
-  customer_short_name = "contoso"
-  environment         = "prod"
-  location            = "eastus"
-  location_code       = "eus"
-  
-  resource_group_name = module.networking.resource_group_name
-  
-  admin_username = "sqladmin"
-  admin_password = data.azurerm_key_vault_secret.sql_password.value
-  
-  database_name = "appdb"
-  sku_name      = "S2"
-  max_size_gb   = 500
-  
-  enable_azure_ad_admin      = true
-  azure_ad_admin_login       = "SQL Administrators"
-  azure_ad_admin_object_id   = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-  
-  allowed_ip_ranges = [
-    {
-      name             = "Office"
-      start_ip_address = "203.0.113.0"
-      end_ip_address   = "203.0.113.255"
-    }
-  ]
-  
-  tags = var.tags
-}
-```
-
-## SKU Options
-
-| Tier | SKU Name | Description | Use Case |
-|------|----------|-------------|----------|
-| Basic | `Basic` | 2GB, 5 DTUs | Dev/test, small workloads |
-| Standard | `S0-S12` | 250GB-1TB, 10-3000 DTUs | Most workloads |
-| Premium | `P1-P15` | 500GB-4TB, 125-4000 DTUs | High-performance |
-| Serverless | `GP_S_Gen5_*` | Auto-scaling | Variable workloads |
-
-## Connection String
-
-The module outputs a connection string (sensitive). Use it in your application:
-
-```
-Server=tcp:{server_name}.database.windows.net,1433;Database={database_name};User ID={admin_username};Password={admin_password};Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;
-```
-
-**Best Practice**: Store credentials in Key Vault and use Managed Identity instead of SQL authentication.
+Production Ready. Uplifted 2026-08-14: switched to `CONVENTIONS.md` naming,
+and changed the public-access default from implicitly-on (no control existed)
+to explicitly-off. If your root relied on the old public+firewall-only
+behavior, set `public_network_access_enabled = true` to keep it. Root code
+written against the older `customer_short_name`/`environment`/`location_code`/
+`instance_number`/`name_suffix` interface needs updating to pass `name` directly.

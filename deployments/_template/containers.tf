@@ -1,57 +1,43 @@
-# Containers & Orchestration
-# AKS, Container Instances, Container Registry
+# Container image registries. Workload-to-registry role assignments are kept in
+# this root because authorization joins two independently reusable modules.
 
-# =====================================================
-# AZURE KUBERNETES SERVICE (Optional)
-# =====================================================
-# module "aks" {
-#   count  = var.enable_aks ? 1 : 0
-#   source = "../../modules/aks"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   vnet_subnet_id      = module.networking[0].subnet_ids["aks"]
-#   
-#   tags = var.tags
-# }
+module "container_registry" {
+  for_each = var.container_registries
+  source   = "../../modules/container-registry"
 
-# =====================================================
-# CONTAINER REGISTRY (Optional)
-# =====================================================
-# module "container_registry" {
-#   count  = var.enable_container_registry ? 1 : 0
-#   source = "../../modules/container-registry"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   
-#   tags = var.tags
-# }
+  name                = "acr${local.name_prefix_nodash}${each.key}"
+  location            = var.location
+  resource_group_name = local.resource_group_name
 
-# =====================================================
-# CONTAINER INSTANCES (Optional)
-# =====================================================
-# module "container_instances" {
-#   count  = var.enable_container_instances ? 1 : 0
-#   source = "../../modules/container-instances"
-#   
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   
-#   resource_group_name = module.networking[0].resource_group_name
-#   
-#   tags = var.tags
-# }
+  sku                           = each.value.sku
+  public_network_access_enabled = each.value.public_network_access_enabled
+  export_policy_enabled         = each.value.export_policy_enabled
+  zone_redundancy_enabled       = each.value.zone_redundancy_enabled
+  georeplications               = each.value.georeplications
+
+  tags = merge(var.tags, { Purpose = each.key })
+}
+
+module "diag_container_registry" {
+  for_each = local.log_analytics_workspace_id != null ? var.container_registries : {}
+  source   = "../../modules/diagnostic-setting"
+
+  name                       = "diag-${module.container_registry[each.key].name}"
+  target_resource_id         = module.container_registry[each.key].id
+  log_analytics_workspace_id = local.log_analytics_workspace_id
+}
+
+locals {
+  web_app_registry_bindings = {
+    for key, app in var.web_apps : key => app
+    if app.container_registry_key != null
+  }
+}
+
+resource "azurerm_role_assignment" "web_app_acr_pull" {
+  for_each = local.web_app_registry_bindings
+
+  scope                = module.container_registry[each.value.container_registry_key].id
+  role_definition_name = "AcrPull"
+  principal_id         = module.web_app[each.key].principal_id
+}

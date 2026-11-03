@@ -1,8 +1,12 @@
 # Terraform Template - Project Summary
 
-## What You Have Built
+## Current status
 
-A **production-ready, reusable Azure Terraform template** designed for Azure architects who need to rapidly deploy standardized infrastructure across multiple customers and regions.
+This is a reusable Azure Terraform module catalog under active development.
+Nineteen modules are implemented and validated; README-only directories are design
+candidates. See `MODULES_INDEX.md` for the live inventory and
+`IMPLEMENTATION_ROADMAP.md` for the staged delivery plan. Older sections below
+are historical context and must not be used as an implementation-status source.
 
 ## ✅ Complete Structure
 
@@ -151,19 +155,16 @@ All resources follow this pattern:
 
 ## 🔧 Module Control
 
-Enable/disable modules using boolean flags in `terraform.tfvars`:
+Repeatable resources use maps; an empty map creates none:
 
 ```hcl
-# Core modules (typically always enabled)
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
-
-# Optional modules (enable as needed)
-enable_virtual_machine = false
-enable_app_service     = false
-enable_front_door      = false
-enable_redis_cache     = false
+enable_networking  = true
+storage_accounts  = {}
+key_vaults        = {}
+sql_databases     = {}
+web_apps          = {}
+function_apps     = {}
+virtual_machines  = {}
 ```
 
 ## 📚 Documentation Files
