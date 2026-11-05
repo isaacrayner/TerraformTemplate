@@ -83,18 +83,6 @@ variable "enable_shared_key_vault" {
   default     = false
 }
 
-variable "enable_shared_monitoring" {
-  description = "Deploy a shared Log Analytics workspace in the Landing Zone subscription for centralised logs"
-  type        = bool
-  default     = false
-}
-
-variable "log_analytics_retention_days" {
-  description = "Log Analytics workspace retention in days (30–730)"
-  type        = number
-  default     = 30
-}
-
 # ── Compute resources (compute_subscription_id) ───────────────────────────────
 
 variable "enable_spoke_networking" {
@@ -105,15 +93,21 @@ variable "enable_spoke_networking" {
 
 # =====================================================
 # STORAGE ACCOUNTS (Multiple Named Instances)
-# Deployed to Compute subscription
 # =====================================================
 
 variable "storage_accounts" {
   description = "Map of storage accounts to create. Key = suffix/purpose (e.g., 'data', 'logs', 'appX')"
   type = map(object({
-    tier             = string        # Standard or Premium
-    replication_type = string        # LRS, GRS, ZRS, GZRS, RAGRS, RAGZRS
-    blob_containers  = list(string)  # List of container names to create
+    tier             = string       # Standard or Premium
+    replication_type = string       # LRS, GRS, ZRS, GZRS, RAGRS, RAGZRS
+    blob_containers  = list(string) # List of container names to create
+    network_access = optional(object({
+      default_action                = optional(string, "Deny")
+      bypass                        = optional(list(string), ["AzureServices"])
+      ip_rules                      = optional(list(string), [])
+      subnet_ids                    = optional(list(string), [])
+      public_network_access_enabled = optional(bool, true)
+    }), {}) # CONVENTIONS.md #2 — override per instance to relax network access deliberately
   }))
   default = {}
 
@@ -125,16 +119,20 @@ variable "storage_accounts" {
 
 # =====================================================
 # KEY VAULTS (Multiple Named Instances)
-# Customer-application Key Vaults — deployed to Compute subscription.
-# For the shared platform Key Vault (AVD creds, platform secrets)
-# see enable_shared_key_vault in landing-zone.tf.
 # =====================================================
 
 variable "key_vaults" {
-  description = "Map of customer-app Key Vaults in the Compute subscription. Key = suffix/purpose (e.g., 'secrets', 'certs', 'appX')"
+  description = "Map of Key Vaults to create. Key = suffix/purpose (e.g., 'secrets', 'certs', 'appX')"
   type = map(object({
-    sku_name    = string  # standard or premium
-    enable_rbac = bool    # Use RBAC (recommended)
+    sku_name    = string # standard or premium
+    enable_rbac = bool   # Use RBAC (recommended)
+    network_access = optional(object({
+      default_action                = optional(string, "Deny")
+      bypass                        = optional(list(string), ["AzureServices"])
+      ip_rules                      = optional(list(string), [])
+      subnet_ids                    = optional(list(string), [])
+      public_network_access_enabled = optional(bool, true)
+    }), {}) # CONVENTIONS.md #2 — override per instance to relax network access deliberately
   }))
   default = {}
 
@@ -146,18 +144,18 @@ variable "key_vaults" {
 
 # =====================================================
 # SQL DATABASES (Multiple Named Instances)
-# Deployed to Compute subscription
 # =====================================================
 
 variable "sql_databases" {
-  description = "Map of SQL Servers and Databases in the Compute subscription. Key = suffix/purpose (e.g., 'orders', 'inventory', 'appX')"
+  description = "Map of SQL Servers and Databases to create. Key = suffix/purpose (e.g., 'orders', 'inventory', 'appX')"
   type = map(object({
-    admin_username = string          # SQL admin username
-    admin_password = string          # SQL admin password (use Key Vault reference)
-    database_name  = string          # Name of the database
-    sku_name       = string          # Basic, S0, S1, S2, P1, P2, etc.
-    max_size_gb    = number          # Maximum database size
-    zone_redundant = optional(bool)  # Enable zone redundancy (default: false)
+    admin_username                = string         # SQL admin username
+    admin_password                = string         # SQL admin password (use Key Vault reference)
+    database_name                 = string         # Name of the database
+    sku_name                      = string         # Basic, S0, S1, S2, P1, P2, etc.
+    max_size_gb                   = number         # Maximum database size
+    zone_redundant                = optional(bool) # Enable zone redundancy (default: false)
+    public_network_access_enabled = optional(bool) # Default false (CONVENTIONS.md #2) — set true only to deliberately use the public+firewall model instead of a private endpoint
   }))
   default   = {}
   sensitive = true
@@ -168,46 +166,44 @@ variable "sql_databases" {
   }
 }
 
-variable "enable_virtual_machine" {
-  description = "Enable virtual machine module (Compute subscription)"
+# =====================================================
+# DIAGNOSTICS
+# The workspace lives in the Landing Zone subscription (shared resource group)
+# and receives diagnostics from both subscriptions (CONVENTIONS.md #4).
+# =====================================================
+
+variable "enable_log_analytics" {
+  description = "Create a shared Log Analytics workspace in the Landing Zone subscription when log_analytics_workspace_id is not supplied."
   type        = bool
-  default     = false
+  default     = true
 }
 
-variable "enable_app_service" {
-  description = "Enable App Service module (Compute subscription)"
-  type        = bool
-  default     = false
+variable "log_analytics_workspace_id" {
+  description = "Existing shared Log Analytics workspace resource ID. When set, this takes precedence and no deployment-local workspace is created."
+  type        = string
+  default     = null
 }
 
-variable "enable_front_door" {
-  description = "Enable Front Door + WAF module (Landing Zone subscription — global entry point)"
-  type        = bool
-  default     = false
+variable "log_analytics_retention_in_days" {
+  description = "Retention for the Log Analytics workspace created by this deployment."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.log_analytics_retention_in_days >= 30 && var.log_analytics_retention_in_days <= 730
+    error_message = "log_analytics_retention_in_days must be between 30 and 730."
+  }
 }
 
-variable "enable_redis_cache" {
-  description = "Enable Redis Cache module (Compute subscription)"
-  type        = bool
-  default     = false
-}
+variable "log_analytics_daily_quota_gb" {
+  description = "Daily ingestion quota for the workspace created by this deployment. Use -1 for unlimited."
+  type        = number
+  default     = -1
 
-variable "enable_avd" {
-  description = "Enable Azure Virtual Desktop module — host pools, session hosts, workspace (Compute subscription)"
-  type        = bool
-  default     = false
-}
-
-variable "enable_aca" {
-  description = "Enable Azure Container Apps module — environment + container apps (Compute subscription)"
-  type        = bool
-  default     = false
-}
-
-variable "enable_container_registry" {
-  description = "Create an Azure Container Registry alongside ACA (only relevant when enable_aca = true)"
-  type        = bool
-  default     = false
+  validation {
+    condition     = var.log_analytics_daily_quota_gb == -1 || var.log_analytics_daily_quota_gb > 0
+    error_message = "log_analytics_daily_quota_gb must be -1 or greater than zero."
+  }
 }
 
 # =====================================================
@@ -228,7 +224,7 @@ variable "hub_subnets" {
   EOT
   type = map(object({
     address_prefix    = string
-    name              = optional(string, null)  # Override generated name (required for GatewaySubnet etc.)
+    name              = optional(string, null) # Override generated name (required for GatewaySubnet etc.)
     service_endpoints = optional(list(string))
     delegation = optional(object({
       name    = string
@@ -238,8 +234,8 @@ variable "hub_subnets" {
   }))
   default = {
     GatewaySubnet = {
-      address_prefix = "10.100.0.0/27"  # /27 minimum for VPN/ExpressRoute gateway
-      name           = "GatewaySubnet"   # Azure requires this exact name
+      address_prefix = "10.100.0.0/27" # /27 minimum for VPN/ExpressRoute gateway
+      name           = "GatewaySubnet" # Azure requires this exact name
     }
     management = {
       address_prefix = "10.100.1.0/24"
@@ -265,7 +261,7 @@ variable "spoke_subnets" {
   EOT
   type = map(object({
     address_prefix    = string
-    name              = optional(string, null)  # Override generated name (required for GatewaySubnet etc.)
+    name              = optional(string, null) # Override generated name (required for GatewaySubnet etc.)
     service_endpoints = optional(list(string))
     # delegation: required for ACA VNet integration (service = "Microsoft.App/environments")
     delegation = optional(object({
@@ -294,35 +290,135 @@ variable "spoke_subnets" {
 }
 
 variable "existing_compute_resource_group_name" {
-  description = "Existing resource group in the Compute subscription (used when enable_spoke_networking = false)"
+  description = "Existing resource group in the Compute subscription. When set, no compute resource group is created and all compute resources go here."
   type        = string
   default     = ""
 }
 
 # =====================================================
-# VIRTUAL MACHINE VARIABLES (Optional)
+# STAGE 2 WORKLOADS
 # =====================================================
 
-variable "vm_size" {
-  description = "VM size (e.g., Standard_D2s_v3)"
-  type        = string
-  default     = "Standard_D2s_v3"
+variable "application_insights" {
+  description = "Application Insights components keyed by workload name. Requires an effective Log Analytics workspace."
+  type = map(object({
+    application_type     = optional(string, "web")
+    daily_data_cap_in_gb = optional(number)
+    retention_in_days    = optional(number, 90)
+    sampling_percentage  = optional(number, 100)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.application_insights) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Application Insights keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }
 
-variable "vm_admin_username" {
-  description = "Admin username for VM"
-  type        = string
-  default     = "azureadmin"
+variable "container_registries" {
+  description = "Container registries keyed by purpose."
+  type = map(object({
+    sku                           = optional(string, "Premium")
+    public_network_access_enabled = optional(bool, false)
+    export_policy_enabled         = optional(bool, false)
+    zone_redundancy_enabled       = optional(bool, false)
+    georeplications = optional(list(object({
+      location                = string
+      zone_redundancy_enabled = optional(bool, false)
+      tags                    = optional(map(string), {})
+    })), [])
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.container_registries) : can(regex("^[a-z0-9]{1,10}$", key))])
+    error_message = "Container Registry keys must be 1-10 lowercase alphanumeric characters."
+  }
 }
 
-# =====================================================
-# APP SERVICE VARIABLES (Optional)
-# =====================================================
+variable "web_apps" {
+  description = "Linux Web Apps keyed by workload name. Use Key Vault reference strings rather than literal secrets in app_settings."
+  type = map(object({
+    service_plan_sku_name         = optional(string, "P1v3")
+    public_network_access_enabled = optional(bool, false)
+    vnet_integration_subnet_key   = optional(string)
+    health_check_path             = optional(string)
+    application_insights_key      = optional(string)
+    container_registry_key        = optional(string)
+    application_stack = optional(object({
+      docker_image_name   = optional(string)
+      docker_registry_url = optional(string)
+      dotnet_version      = optional(string)
+      go_version          = optional(string)
+      java_server         = optional(string)
+      java_server_version = optional(string)
+      java_version        = optional(string)
+      node_version        = optional(string)
+      php_version         = optional(string)
+      python_version      = optional(string)
+    }))
+    app_settings = optional(map(string), {})
+  }))
+  default = {}
 
-variable "app_service_sku_name" {
-  description = "App Service Plan SKU (e.g., P1v2, S1, B1)"
-  type        = string
-  default     = "P1v2"
+  validation {
+    condition     = alltrue([for key in keys(var.web_apps) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Web App keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
+}
+
+variable "function_apps" {
+  description = "Linux Function Apps keyed by workload name. Each references a storage account key in storage_accounts."
+  type = map(object({
+    service_plan_sku_name = optional(string, "EP1")
+    storage_account_key   = string
+    runtime = object({
+      name    = string
+      version = string
+    })
+    public_network_access_enabled = optional(bool, false)
+    vnet_integration_subnet_key   = optional(string)
+    application_insights_key      = optional(string)
+    app_settings                  = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.function_apps) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Function App keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
+}
+
+variable "virtual_machines" {
+  description = "SSH-only Linux VMs keyed by purpose."
+  type = map(object({
+    subnet_key                     = string
+    size                           = optional(string, "Standard_D2s_v5")
+    zone                           = optional(string)
+    admin_username                 = optional(string, "azureadmin")
+    admin_ssh_public_key           = string
+    private_ip_address             = optional(string)
+    public_ip_address_id           = optional(string)
+    accelerated_networking_enabled = optional(bool, false)
+    source_image = optional(object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = optional(string, "latest")
+      }), {
+      publisher = "Canonical"
+      offer     = "0001-com-ubuntu-server-jammy"
+      sku       = "22_04-lts-gen2"
+    })
+    os_disk_storage_account_type = optional(string, "Premium_LRS")
+    os_disk_size_gb              = optional(number)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.virtual_machines) : can(regex("^[a-z0-9-]{1,12}$", key))])
+    error_message = "Virtual Machine keys must be 1-12 lowercase alphanumeric characters or hyphens."
+  }
 }
 
 # =====================================================
@@ -330,6 +426,13 @@ variable "app_service_sku_name" {
 # Front Door deploys to the Landing Zone subscription.
 # Used when enable_front_door = true
 # =====================================================
+
+variable "enable_front_door" {
+  description = "Deploy Front Door + WAF in the Landing Zone subscription (global entry point)"
+  type        = bool
+  default     = false
+}
+
 
 variable "front_door_sku_name" {
   description = "Front Door SKU: 'Standard_AzureFrontDoor' or 'Premium_AzureFrontDoor'. WAF managed rules require Premium."
@@ -362,13 +465,13 @@ variable "front_door_origin_groups" {
     See modules/front-door/README.md for full examples.
   EOT
   type = map(object({
-    session_affinity_enabled                  = optional(bool, false)
-    health_probe_path                         = optional(string, "/")
-    health_probe_protocol                     = optional(string, "Https")
-    health_probe_interval_seconds             = optional(number, 100)
-    load_balancing_sample_size                = optional(number, 4)
+    session_affinity_enabled                   = optional(bool, false)
+    health_probe_path                          = optional(string, "/")
+    health_probe_protocol                      = optional(string, "Https")
+    health_probe_interval_seconds              = optional(number, 100)
+    load_balancing_sample_size                 = optional(number, 4)
     load_balancing_successful_samples_required = optional(number, 3)
-    load_balancing_additional_latency_ms      = optional(number, 50)
+    load_balancing_additional_latency_ms       = optional(number, 50)
     origins = map(object({
       host_name                      = string
       origin_host_header             = optional(string, null)
@@ -419,8 +522,9 @@ variable "waf_mode" {
 variable "waf_managed_rule_sets" {
   description = "Microsoft-managed WAF rule sets (Premium SKU only). Defaults cover OWASP Top 10 and Bot Manager."
   type = list(object({
-    type      = string
-    version   = string
+    type    = string
+    version = string
+    action  = optional(string, "Block")
     overrides = optional(list(object({
       rule_group_name = string
       rules = optional(list(object({
@@ -431,7 +535,7 @@ variable "waf_managed_rule_sets" {
     })), [])
   }))
   default = [
-    { type = "Microsoft_DefaultRuleSet",    version = "2.1", overrides = [] },
+    { type = "Microsoft_DefaultRuleSet", version = "2.1", overrides = [] },
     { type = "Microsoft_BotManagerRuleSet", version = "1.0", overrides = [] }
   ]
 }
@@ -457,32 +561,17 @@ variable "waf_custom_rules" {
 }
 
 # =====================================================
-# REDIS CACHE VARIABLES (Optional)
-# =====================================================
-
-variable "redis_capacity" {
-  description = "Redis cache capacity"
-  type        = number
-  default     = 1
-}
-
-variable "redis_family" {
-  description = "Redis cache family (C for Basic/Standard, P for Premium)"
-  type        = string
-  default     = "C"
-}
-
-variable "redis_sku_name" {
-  description = "Redis cache SKU (Basic, Standard, Premium)"
-  type        = string
-  default     = "Standard"
-}
-
-# =====================================================
 # AZURE VIRTUAL DESKTOP VARIABLES (Optional)
 # Deployed to Compute subscription
 # Used when enable_avd = true
 # =====================================================
+
+variable "enable_avd" {
+  description = "Enable Azure Virtual Desktop module — host pools, session hosts, workspace (Compute subscription)"
+  type        = bool
+  default     = false
+}
+
 
 variable "avd_workspace_friendly_name" {
   description = "Display name shown to users in the AVD client (e.g., 'Contoso Virtual Desktop')"
@@ -520,15 +609,15 @@ variable "avd_host_pools" {
     session_host_count    = number
     vm_size               = string
     vm_name_prefix        = string
-    subnet_key            = string  # must match a key in var.spoke_subnets
+    subnet_key            = string # must match a key in var.spoke_subnets
     os_disk_type          = optional(string, "Premium_LRS")
     # source_image_id: set to an Azure Compute Gallery or managed image resource ID to use
     # a golden image. When set, image_publisher/offer/sku are ignored.
     # Example: "/subscriptions/.../galleries/MyGallery/images/AVDGolden/versions/latest"
-    source_image_id = optional(string, null)
-    image_publisher = optional(string, "MicrosoftWindowsDesktop")
-    image_offer     = optional(string, "windows-11")
-    image_sku       = optional(string, "win11-23h2-avd")
+    source_image_id     = optional(string, null)
+    image_publisher     = optional(string, "MicrosoftWindowsDesktop")
+    image_offer         = optional(string, "windows-11")
+    image_sku           = optional(string, "win11-23h2-avd")
     aad_joined          = optional(bool, true)
     intune_enrollment   = optional(bool, false)
     admin_username      = string
@@ -575,22 +664,23 @@ variable "avd_scaling_plan_peak_end_time" {
 # Used when enable_aca = true
 # =====================================================
 
+variable "enable_aca" {
+  description = "Enable Azure Container Apps module — environment + container apps (Compute subscription)"
+  type        = bool
+  default     = false
+}
+
+
 variable "aca_internal_load_balancer" {
   description = "Deploy the ACA environment with an internal (private) load balancer. Requires an 'aca' subnet in var.spoke_subnets with Microsoft.App/environments delegation."
   type        = bool
   default     = false
 }
 
-variable "aca_log_retention_days" {
-  description = "Log Analytics retention in days for the ACA environment (30–730)"
-  type        = number
-  default     = 30
-}
-
-variable "acr_sku" {
-  description = "Azure Container Registry SKU: 'Basic', 'Standard', or 'Premium'"
+variable "aca_container_registry_key" {
+  description = "Key in var.container_registries that the container apps pull from. The apps get AcrPull on it. Null means public images only."
   type        = string
-  default     = "Standard"
+  default     = null
 }
 
 variable "container_apps" {
@@ -616,9 +706,9 @@ variable "container_apps" {
     env_vars                 = optional(map(string), {})
     # secrets: key = secret name, value = secret value. WARNING: stored in Terraform state.
     # Use Key Vault references instead of plain values in production.
-    secrets         = optional(map(string), {})
+    secrets = optional(map(string), {})
     # secret_env_vars: key = env var name, value = a secret name defined in secrets above
-    secret_env_vars = optional(map(string), {})
+    secret_env_vars     = optional(map(string), {})
     ingress_enabled     = optional(bool, true)
     ingress_external    = optional(bool, false)
     ingress_target_port = optional(number, 80)

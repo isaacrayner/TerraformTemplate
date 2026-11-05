@@ -35,12 +35,22 @@ tags = {
 # MODULE CONTROL FLAGS
 # =====================================================
 # ── Landing Zone (landing_zone_subscription_id) ──────
-enable_hub_networking    = true   # Hub VNet in LZ subscription
-enable_shared_key_vault  = false  # Shared KV for platform secrets (AVD creds, certs)
-enable_shared_monitoring = false  # Centralised Log Analytics workspace
+enable_hub_networking   = true   # Hub VNet in LZ subscription
+enable_shared_key_vault = false  # Shared KV for platform secrets (AVD creds, certs)
 
 # ── Compute (compute_subscription_id) ────────────────
 enable_spoke_networking = true  # Spoke VNet in Compute subscription
+
+# =====================================================
+# DIAGNOSTICS (CONVENTIONS.md #4)
+# The workspace is created in the LZ subscription and receives diagnostics
+# from both subscriptions. Set a finite daily quota to protect a new
+# deployment from runaway ingestion costs.
+# =====================================================
+enable_log_analytics            = true
+log_analytics_retention_in_days = 30
+log_analytics_daily_quota_gb    = 5
+# log_analytics_workspace_id    = "/subscriptions/.../workspaces/shared-log"  # use an existing workspace instead
 
 # =====================================================
 # STORAGE ACCOUNTS (Compute subscription)
@@ -101,15 +111,13 @@ sql_databases = {
 
 # =====================================================
 # OPTIONAL MODULE FLAGS
+# Web apps, function apps, VMs, registries and App Insights are map-driven and
+# empty by default; see web-workload.tfvars.example.
 # =====================================================
-enable_virtual_machine    = false
-enable_app_service        = false
-enable_front_door         = false   # Azure Front Door + WAF (LZ subscription)
-enable_redis_cache        = false
-enable_avd                = false   # Azure Virtual Desktop (Compute subscription)
-enable_aca                = false   # Azure Container Apps (Compute subscription)
-enable_container_registry = false   # Azure Container Registry (for ACA)
-enable_waf                = true    # WAF on Front Door (only when enable_front_door = true)
+enable_front_door = false  # Azure Front Door + WAF (LZ subscription)
+enable_avd        = false  # Azure Virtual Desktop (Compute subscription)
+enable_aca        = false  # Azure Container Apps (Compute subscription)
+enable_waf        = true   # WAF on Front Door (only when enable_front_door = true)
 
 # =====================================================
 # HUB NETWORKING (Landing Zone subscription)
@@ -181,23 +189,12 @@ spoke_subnets = {
 }
 
 # =====================================================
-# VIRTUAL MACHINE CONFIGURATION (if enabled)
-# =====================================================
-# vm_size           = "Standard_D2s_v3"
-# vm_admin_username = "azureadmin"
-
-# =====================================================
-# APP SERVICE CONFIGURATION (if enabled)
-# =====================================================
-# app_service_sku_name = "P1v2"  # B1, S1, P1v2, P2v2, etc.
-
-# =====================================================
 # FRONT DOOR + WAF CONFIGURATION (if enable_front_door = true)
 # Deploys to Landing Zone subscription.
 #
 # QUICK START: fill in host_name values for your backends and apply.
 # MULTI-REGION: add secondary origins with priority = 2 for failover.
-# ACA BACKENDS: use module.aca[0].container_app_urls["app-key"] for host_name.
+# ACA BACKENDS: use the aca_container_app_urls output for host_name.
 # =====================================================
 # front_door_sku_name                 = "Premium_AzureFrontDoor"
 # front_door_response_timeout_seconds = 120
@@ -217,13 +214,13 @@ spoke_subnets = {
 #   # ── MULTI-COMPONENT: separate origin groups for frontend + API ─────────────
 #   # frontend = {
 #   #   origins = {
-#   #     primary = { host_name = "ca-contoso-prod-eus-001-frontend.happyforest-12345.eastus.azurecontainerapps.io" }
+#   #     primary = { host_name = "ca-frontend-contoso-prod-eus-001.happyforest-12345.eastus.azurecontainerapps.io" }
 #   #   }
 #   # }
 #   # api = {
 #   #   health_probe_path = "/health"
 #   #   origins = {
-#   #     primary = { host_name = "ca-contoso-prod-eus-001-api.happyforest-12345.eastus.azurecontainerapps.io" }
+#   #     primary = { host_name = "ca-api-contoso-prod-eus-001.happyforest-12345.eastus.azurecontainerapps.io" }
 #   #   }
 #   # }
 #
@@ -274,13 +271,6 @@ spoke_subnets = {
 #     match_conditions = [{ match_variable = "RemoteAddr", operator = "GeoMatch", match_values = ["CN", "RU", "KP"] }]
 #   }
 # }
-
-# =====================================================
-# REDIS CACHE CONFIGURATION (if enabled)
-# =====================================================
-# redis_capacity = 1
-# redis_family   = "C"
-# redis_sku_name = "Standard"
 
 # =====================================================
 # AZURE VIRTUAL DESKTOP CONFIGURATION (if enable_avd = true)
@@ -345,12 +335,12 @@ spoke_subnets = {
 # Deployed to Compute subscription.
 #
 # QUICK START: define one app entry in container_apps.
-# PRODUCTION: set enable_container_registry = true and push images to the ACR output.
+# PRODUCTION: add a registry to container_registries, set aca_container_registry_key
+#             to its key, and push images to its login server.
 # PRIVATE ENV: set aca_internal_load_balancer = true and add an "aca" subnet in spoke_subnets.
 # =====================================================
 # aca_internal_load_balancer = false
-# aca_log_retention_days     = 30
-# acr_sku                    = "Standard"
+# aca_container_registry_key = "platform"   # key in container_registries
 #
 # container_apps = {
 #   # ── SIMPLE: single public-facing app ────────────────────────────────────────
@@ -367,7 +357,7 @@ spoke_subnets = {
 #
 #   # ── PRODUCTION: internal API + background worker ─────────────────────────────
 #   # api = {
-#   #   image               = "myacr.azurecr.io/myapi:v1.0"  # requires enable_container_registry = true
+#   #   image               = "myacr.azurecr.io/myapi:v1.0"  # requires aca_container_registry_key
 #   #   cpu                 = 1.0
 #   #   memory              = "2Gi"
 #   #   min_replicas        = 2

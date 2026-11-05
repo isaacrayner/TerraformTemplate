@@ -1,25 +1,12 @@
 # Input Variables — Azure Virtual Desktop Module
 
 # =====================================================
-# CORE IDENTITY VARIABLES (same pattern across all modules)
+# NAMING AND PLACEMENT (CONVENTIONS.md #1)
 # =====================================================
 
-variable "customer_short_name" {
-  description = "Short name for the customer (3-8 lowercase characters)"
+variable "name_suffix" {
+  description = "Naming suffix computed in the calling root's locals, e.g. local.name_prefix. Resources are named vdws-{suffix}, vdpool-{pool key}-{suffix}, vdag-{pool key}-{suffix} and vdscaling-{pool key}-{suffix}."
   type        = string
-  validation {
-    condition     = can(regex("^[a-z]{3,8}$", var.customer_short_name))
-    error_message = "Customer short name must be 3-8 lowercase letters only."
-  }
-}
-
-variable "environment" {
-  description = "Environment name (prod, dev, staging, uat, test)"
-  type        = string
-  validation {
-    condition     = contains(["prod", "dev", "staging", "uat", "test"], var.environment)
-    error_message = "Environment must be one of: prod, dev, staging, uat, test."
-  }
 }
 
 variable "location" {
@@ -27,23 +14,9 @@ variable "location" {
   type        = string
 }
 
-variable "location_code" {
-  description = "Short code for the Azure region (e.g., 'eus' for East US)"
+variable "resource_group_name" {
+  description = "Resource group for all AVD resources. Create it with the resource-group module; this module does not create one."
   type        = string
-  validation {
-    condition     = can(regex("^[a-z]{2,4}$", var.location_code))
-    error_message = "Location code must be 2-4 lowercase letters."
-  }
-}
-
-variable "instance_number" {
-  description = "Instance number for resource naming (default: 1)"
-  type        = number
-  default     = 1
-  validation {
-    condition     = var.instance_number > 0 && var.instance_number < 1000
-    error_message = "Instance number must be between 1 and 999."
-  }
 }
 
 variable "tags" {
@@ -57,7 +30,7 @@ variable "tags" {
 # =====================================================
 
 variable "workspace_friendly_name" {
-  description = "Display name shown to users in the AVD client (e.g., 'Contoso Virtual Desktop')"
+  description = "Display name shown to users in the AVD client (e.g., 'Contoso Virtual Desktop (prod)')"
   type        = string
   default     = "Virtual Desktop"
 }
@@ -132,8 +105,8 @@ variable "host_pools" {
     # ── Identity & enrollment ──────────────────────────────────────────────
     # aad_joined=true for Entra ID (modern, no domain required)
     # aad_joined=false for hybrid AD domain-join (set domain_join_* variables)
-    aad_joined         = optional(bool, true)
-    intune_enrollment  = optional(bool, false)
+    aad_joined        = optional(bool, true)
+    intune_enrollment = optional(bool, false)
 
     # ── Admin credentials ──────────────────────────────────────────────────
     admin_username = string

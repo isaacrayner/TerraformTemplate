@@ -19,13 +19,18 @@ output "subnet_ids" {
 }
 
 output "resource_group_name" {
-  description = "Resource group name for spoke networking resources (Compute subscription)"
-  value       = var.enable_spoke_networking ? module.spoke_networking[0].resource_group_name : null
+  description = "Resource group for this deployment's workloads (Compute subscription)"
+  value       = local.resource_group_name
 }
 
 # =====================================================
-# HUB NETWORKING OUTPUTS (Landing Zone subscription)
+# LANDING ZONE OUTPUTS (Landing Zone subscription)
 # =====================================================
+output "shared_resource_group_name" {
+  description = "Shared resource group for hub networking, shared Key Vault, Log Analytics and Front Door"
+  value       = local.shared_resource_group_name
+}
+
 output "hub_vnet_id" {
   description = "Hub Virtual Network ID"
   value       = var.enable_hub_networking ? module.hub_networking[0].vnet_id : null
@@ -41,40 +46,78 @@ output "hub_subnet_ids" {
   value       = var.enable_hub_networking ? module.hub_networking[0].subnet_ids : {}
 }
 
-output "hub_resource_group_name" {
-  description = "Resource group name for hub networking resources (Landing Zone subscription)"
-  value       = var.enable_hub_networking ? module.hub_networking[0].resource_group_name : null
-}
-
-# =====================================================
-# SHARED MONITORING OUTPUTS (Landing Zone subscription)
-# =====================================================
-output "log_analytics_workspace_id" {
-  description = "Shared Log Analytics workspace resource ID (pass to AVD/ACA/App Insights modules)"
-  value       = var.enable_shared_monitoring ? azurerm_log_analytics_workspace.shared[0].id : null
-}
-
-output "log_analytics_workspace_name" {
-  description = "Shared Log Analytics workspace name"
-  value       = var.enable_shared_monitoring ? azurerm_log_analytics_workspace.shared[0].name : null
-}
-
-# =====================================================
-# SHARED KEY VAULT OUTPUT (Landing Zone subscription)
-# =====================================================
 output "shared_key_vault_uri" {
-  description = "Shared Key Vault URI (Landing Zone subscription)"
-  value       = var.enable_shared_key_vault ? azurerm_key_vault.shared[0].vault_uri : null
+  description = "Shared Key Vault URI"
+  value       = var.enable_shared_key_vault ? module.shared_key_vault[0].key_vault_uri : null
 }
 
 output "shared_key_vault_id" {
   description = "Shared Key Vault resource ID"
-  value       = var.enable_shared_key_vault ? azurerm_key_vault.shared[0].id : null
+  value       = var.enable_shared_key_vault ? module.shared_key_vault[0].key_vault_id : null
 }
 
 # =====================================================
-# STORAGE ACCOUNT OUTPUTS (Compute subscription)
+# MONITORING AND WORKLOAD OUTPUTS
 # =====================================================
+output "log_analytics_workspace_id" {
+  description = "Resource ID of the Log Analytics workspace (created in the landing zone, or supplied)."
+  value       = local.log_analytics_workspace_id
+}
+
+output "application_insights" {
+  description = "Application Insights resource IDs and app IDs by workload key."
+  value = {
+    for key, component in module.application_insights : key => {
+      id     = component.id
+      app_id = component.app_id
+    }
+  }
+}
+
+output "container_registries" {
+  description = "Container Registry IDs and login servers by key."
+  value = {
+    for key, registry in module.container_registry : key => {
+      id           = registry.id
+      login_server = registry.login_server
+    }
+  }
+}
+
+output "web_apps" {
+  description = "Linux Web App IDs, hostnames, and managed identity principal IDs by key."
+  value = {
+    for key, app in module.web_app : key => {
+      id               = app.id
+      default_hostname = app.default_hostname
+      principal_id     = app.principal_id
+    }
+  }
+}
+
+output "function_apps" {
+  description = "Linux Function App IDs, hostnames, and managed identity principal IDs by key."
+  value = {
+    for key, app in module.function_app : key => {
+      id               = app.id
+      default_hostname = app.default_hostname
+      principal_id     = app.principal_id
+    }
+  }
+}
+
+output "virtual_machines" {
+  description = "Linux VM IDs, private IPs, and managed identity principal IDs by key."
+  value = {
+    for key, vm in module.virtual_machine : key => {
+      id                 = vm.id
+      private_ip_address = vm.private_ip_address
+      principal_id       = vm.principal_id
+    }
+  }
+}
+
+# Storage Account Outputs (Multiple Instances)
 output "storage_accounts" {
   description = "Map of storage account names and their details"
   value = {
@@ -87,9 +130,7 @@ output "storage_accounts" {
   }
 }
 
-# =====================================================
-# KEY VAULT OUTPUTS (Compute subscription)
-# =====================================================
+# Key Vault Outputs (Multiple Instances)
 output "key_vaults" {
   description = "Map of Key Vault names and their details"
   value = {
@@ -102,9 +143,7 @@ output "key_vaults" {
   }
 }
 
-# =====================================================
-# SQL DATABASE OUTPUTS (Compute subscription)
-# =====================================================
+# SQL Database Outputs (Multiple Instances)
 output "sql_databases" {
   description = "Map of SQL Server names and their details"
   value = {
@@ -116,68 +155,54 @@ output "sql_databases" {
       purpose       = key
     }
   }
-  sensitive = true
+  sensitive = true # Contains sensitive server info
 }
 
 # =====================================================
-# AVD OUTPUTS — uncomment alongside the module call in avd.tf
+# AVD OUTPUTS (Compute subscription)
 # =====================================================
-# output "avd_workspace_id" {
-#   description = "AVD Workspace resource ID"
-#   value       = var.enable_avd ? module.avd[0].workspace_id : null
-# }
-# output "avd_workspace_name" {
-#   description = "AVD Workspace name"
-#   value       = var.enable_avd ? module.avd[0].workspace_name : null
-# }
-# output "avd_host_pool_ids" {
-#   description = "Map of AVD host pool keys to their resource IDs"
-#   value       = var.enable_avd ? module.avd[0].host_pool_ids : {}
-# }
-# output "avd_session_host_names" {
-#   description = "Map of session host keys to their VM names"
-#   value       = var.enable_avd ? module.avd[0].session_host_names : {}
-# }
-# output "avd_total_session_hosts" {
-#   description = "Total number of session host VMs deployed"
-#   value       = var.enable_avd ? module.avd[0].total_session_host_count : 0
-# }
+output "avd_workspace_id" {
+  description = "AVD Workspace resource ID"
+  value       = var.enable_avd ? module.avd[0].workspace_id : null
+}
+
+output "avd_host_pool_ids" {
+  description = "Map of AVD host pool keys to their resource IDs"
+  value       = var.enable_avd ? module.avd[0].host_pool_ids : {}
+}
+
+output "avd_session_host_names" {
+  description = "Map of session host keys to their VM names"
+  value       = var.enable_avd ? module.avd[0].session_host_names : {}
+}
 
 # =====================================================
-# FRONT DOOR OUTPUTS — uncomment alongside the module call in landing-zone.tf
+# ACA OUTPUTS (Compute subscription)
 # =====================================================
-# output "front_door_hostnames" {
-#   description = "Map of endpoint keys to their Front Door hostnames"
-#   value       = var.enable_front_door ? module.front_door[0].endpoint_hostnames : {}
-# }
-# output "front_door_waf_policy_id" {
-#   description = "WAF policy resource ID"
-#   value       = var.enable_front_door ? module.front_door[0].waf_policy_id : null
-# }
+output "aca_environment_id" {
+  description = "Container App Environment resource ID"
+  value       = var.enable_aca ? module.aca[0].environment_id : null
+}
+
+output "aca_container_app_urls" {
+  description = "Map of container app keys to their FQDNs (ingress-enabled apps only)"
+  value       = var.enable_aca ? module.aca[0].container_app_urls : {}
+}
 
 # =====================================================
-# ACA OUTPUTS — uncomment alongside the module call in aca.tf
+# FRONT DOOR OUTPUTS (Landing Zone subscription)
 # =====================================================
-# output "aca_environment_id" {
-#   description = "Container App Environment resource ID"
-#   value       = var.enable_aca ? module.aca[0].environment_id : null
-# }
-# output "aca_environment_name" {
-#   description = "Container App Environment name"
-#   value       = var.enable_aca ? module.aca[0].environment_name : null
-# }
-# output "aca_container_app_urls" {
-#   description = "Map of container app keys to their public FQDNs (ingress-enabled apps only)"
-#   value       = var.enable_aca ? module.aca[0].container_app_urls : {}
-# }
-# output "aca_acr_login_server" {
-#   description = "Azure Container Registry login server (null when enable_container_registry = false)"
-#   value       = var.enable_aca ? module.aca[0].acr_login_server : null
-# }
+output "front_door_hostnames" {
+  description = "Map of endpoint keys to their Front Door hostnames"
+  value       = var.enable_front_door ? module.front_door[0].endpoint_hostnames : {}
+}
 
-# =====================================================
-# DEPLOYMENT SUMMARY
-# =====================================================
+output "front_door_waf_policy_id" {
+  description = "WAF policy resource ID"
+  value       = var.enable_front_door ? module.front_door[0].waf_policy_id : null
+}
+
+# Deployment Info
 output "deployment_info" {
   description = "Summary of deployed resources"
   value = {
@@ -190,17 +215,24 @@ output "deployment_info" {
       compute      = var.compute_subscription_id
     }
     resource_counts = {
-      hub_networking     = var.enable_hub_networking ? 1 : 0
-      spoke_networking   = var.enable_spoke_networking ? 1 : 0
-      storage_accounts   = length(var.storage_accounts)
-      key_vaults         = length(var.key_vaults)
-      sql_databases      = length(var.sql_databases)
-      virtual_machines   = var.enable_virtual_machine ? 1 : 0
-      app_services       = var.enable_app_service ? 1 : 0
-      front_doors        = var.enable_front_door ? 1 : 0
-      redis_caches       = var.enable_redis_cache ? 1 : 0
-      avd_host_pools     = var.enable_avd ? length(var.avd_host_pools) : 0
-      aca_container_apps = var.enable_aca ? length(var.container_apps) : 0
-    }
+      hub_networking   = var.enable_hub_networking ? 1 : 0
+      shared_key_vault = var.enable_shared_key_vault ? 1 : 0
+      storage_accounts = length(var.storage_accounts)
+      key_vaults       = length(var.key_vaults)
+      # var.sql_databases is sensitive (it carries admin passwords) — a bare
+      # length() of it taints this entire otherwise-harmless summary output.
+      # nonsensitive() here is safe: only the count leaves this expression,
+      # not any credential.
+      sql_databases        = nonsensitive(length(var.sql_databases))
+      spoke_networking     = var.enable_spoke_networking ? 1 : 0
+      log_analytics        = local.diagnostics_enabled ? 1 : 0
+      application_insights = length(var.application_insights)
+      container_registries = length(var.container_registries)
+      web_apps             = length(var.web_apps)
+      function_apps        = length(var.function_apps)
+      virtual_machines     = length(var.virtual_machines)
+      front_doors          = var.enable_front_door ? 1 : 0
+      avd_host_pools       = var.enable_avd ? nonsensitive(length(var.avd_host_pools)) : 0
+    aca_container_apps = var.enable_aca ? length(var.container_apps) : 0 }
   }
 }

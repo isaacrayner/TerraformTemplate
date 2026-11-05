@@ -1,34 +1,37 @@
 # Key Vaults — Compute subscription
-# Customer-application Key Vaults for app secrets, connection strings, and certificates.
-# Each key becomes part of the Key Vault name suffix.
-#
-# For the shared platform Key Vault (AVD creds, service principal secrets),
-# see enable_shared_key_vault in landing-zone.tf.
+# Multiple named instances for different purposes/applications
+# Each key becomes part of the Key Vault name suffix
 
 # =====================================================
 # KEY VAULTS (Multiple Named Instances)
 # =====================================================
 module "key_vault" {
-  for_each = var.key_vaults
-  source   = "../../modules/key-vault"
+  for_each  = var.key_vaults
+  source    = "../../modules/key-vault"
   providers = { azurerm = azurerm.compute }
 
-  customer_short_name = var.customer_short_name
-  environment         = var.environment
+  name                = "kv-${local.name_prefix}-${each.key}"
   location            = var.location
-  location_code       = var.location_code
-  instance_number     = var.instance_number
-  name_suffix         = each.key  # e.g., "secrets", "certs", "appX"
-
-  resource_group_name = var.enable_spoke_networking ? module.spoke_networking[0].resource_group_name : var.existing_compute_resource_group_name
-  # tenant_id is the same across both subscriptions (same Azure AD tenant)
-  tenant_id = data.azurerm_client_config.current.tenant_id
+  resource_group_name = local.resource_group_name
+  tenant_id           = data.azurerm_client_config.compute.tenant_id
 
   sku_name                    = each.value.sku_name
   enable_rbac_authorization   = each.value.enable_rbac
   enabled_for_disk_encryption = true
 
+  network_access = each.value.network_access
+
   tags = merge(var.tags, {
-    Purpose = each.key
+    Purpose = each.key # Tag with the purpose/application name
   })
+}
+
+module "diag_key_vault" {
+  for_each  = local.diagnostics_enabled ? var.key_vaults : {}
+  source    = "../../modules/diagnostic-setting"
+  providers = { azurerm = azurerm.compute }
+
+  name                       = "diag-${module.key_vault[each.key].key_vault_name}"
+  target_resource_id         = module.key_vault[each.key].key_vault_id
+  log_analytics_workspace_id = local.log_analytics_workspace_id
 }

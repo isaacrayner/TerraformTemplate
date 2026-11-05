@@ -1,192 +1,119 @@
-# Deployment Template README
+# Customer deployment starter
 
-This is a **template deployment folder** for customer-specific Azure infrastructure.
+This root composes only modules that have Terraform implementation files and
+pass the repository validation gate. Copy it into a customer repository, then
+replace local module sources with version-pinned Git sources from
+`MODULE_RELEASES.md`.
 
-## 📁 File Organization (Important for Large Deployments!)
+## Two subscriptions
 
-Resources are **split by category** to keep files manageable:
+The root deploys across two subscriptions in the same Entra ID tenant. The
+identity running Terraform needs Contributor (or an equivalent custom role) on
+both.
 
-| File | Purpose | You Edit? |
-|------|---------|-----------|
-| **terraform.tfvars** | Variable values | ✅ **YES - This is what you configure!** |
-| **providers.tf** | Azure provider config | ❌ No (usually) |
-| **backend.tf** | Remote state config | ⚠️ Maybe (for production) |
-| **variables.tf** | Variable definitions | ❌ No |
-| **outputs.tf** | Output definitions | ❌ No |
-| | |
-| **core.tf** | Networking, resource groups | ❌ No |
-| **storage.tf** | Storage accounts (multiple) | ❌ No |
-| **key-vaults.tf** | Key Vaults (multiple) | ❌ No |
-| **databases.tf** | SQL, Cosmos DB | ❌ No |
-| **compute.tf** | VMs, App Services, Functions | ⚠️ Uncomment as needed |
-| **containers.tf** | AKS, ACR, Container Instances | ⚠️ Uncomment as needed |
-| **networking-advanced.tf** | Front Door, VPN, Firewall | ⚠️ Uncomment as needed |
-| **monitoring.tf** | App Insights, Log Analytics | ⚠️ Uncomment as needed |
-| **integration.tf** | Redis, APIM, Service Bus | ⚠️ Uncomment as needed |
+| Subscription | Provider | Holds |
+|---|---|---|
+| Landing Zone (`landing_zone_subscription_id`) | default `azurerm` | Shared resource group, hub VNet, shared Key Vault, Log Analytics, Front Door + WAF |
+| Compute (`compute_subscription_id`) | `azurerm.compute` | Workload resource group, spoke VNet, everything in the baseline below, AVD, ACA |
 
-### 🎯 Why Split Files?
+Hub and spoke are peered in both directions (`hub-spoke-peering.tf`).
 
-**Problem**: With 10+ storage accounts, 10+ Key Vaults, VMs, databases, etc., a single `main.tf` becomes 500+ lines and unmanageable.
+## Included baseline
 
-**Solution**: Split resources by category. Each file stays focused and < 100 lines.
+- Resource group creation, or reuse of one existing compute resource group
+- Hub and spoke VNets, subnets, and one NSG per subnet (none on `GatewaySubnet` / `AzureFirewallSubnet`)
+- Multiple storage accounts and Key Vaults
+- Multiple Azure SQL servers/databases
+- Log Analytics, with support for a shared existing workspace
+- Workspace-based Application Insights, Linux Web Apps, and Function Apps
+- Container Registry with managed-identity workload pull assignments
+- SSH-only Linux VMs
+- Diagnostic settings for the implemented baseline resources
+- Optional private endpoints and private DNS examples
+- Optional Azure Virtual Desktop, Azure Container Apps, and Front Door + WAF,
+  each off by default behind its `enable_*` flag
 
-**Benefits**:
-- ✅ Easy navigation - storage config is in `storage.tf`, not line 400 of `main.tf`
-- ✅ Parallel work - team members edit different files without conflicts
-- ✅ Clear git diffs - see which resource types changed
-- ✅ Selective targeting - `terraform plan -target=module.storage_account["data"]`
+README-only candidate modules are deliberately absent. Setting a flag must
+never silently do nothing.
 
-## Quick Start for New Customer
+## Start a customer deployment
 
-### 1. Copy This Template
 ```bash
-cd deployments
-cp -r _template contoso-eastus
-cd contoso-eastus
-```
-
-### 2. Update Configuration
-Copy and edit the terraform.tfvars file:
-```bash
+cp -R deployments/_template ../contoso-infrastructure
+cd ../contoso-infrastructure
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars` and update:
-- `customer_short_name` - Your customer's short name (3-8 chars)
-- `subscription_id` - Azure subscription ID
-- `location` and `location_code` - Azure region
-- Module flags (enable_networking, enable_storage_account, etc.)
-- Networking configuration (address spaces, subnets)
+Then:
 
-### 3. Initialize Terraform
+1. Change each `../../modules/...` source to a version-pinned Git source.
+2. Configure a unique backend in `backend.tf`.
+3. Replace the sample subscription IDs, credentials, address ranges, names, and
+   tags in `terraform.tfvars`.
+4. Keep credentials outside version control; use CI secret variables or an
+   approved secret store.
+5. Run `terraform init`, `terraform fmt -check`, `terraform validate`, and
+   `terraform plan`.
+6. Review the complete plan before applying in a non-production subscription.
+
+For the representative web workload, apply the optional overlay during review:
+
 ```bash
-terraform init
+terraform plan \
+  -var-file=terraform.tfvars \
+  -var-file=web-workload.tfvars.example
 ```
 
-### 4. Validate Configuration
-```bash
-terraform validate
-```
+## File map
 
-### 5. Review Plan
-```bash
-terraform plan
-```
+| File | Responsibility |
+|---|---|
+| `providers.tf` | Terraform/AzureRM constraints and provider configuration |
+| `backend.tf` | Per-customer remote state configuration |
+| `variables.tf` | Root input contract |
+| `locals.tf` | Naming and effective shared-resource decisions |
+| `landing-zone.tf` | Shared resource group, hub VNet, shared Key Vault (Landing Zone subscription) |
+| `hub-spoke-peering.tf` | Hub-to-spoke and spoke-to-hub VNet peering |
+| `core.tf` | Compute resource group, spoke VNet, and NSG diagnostics |
+| `monitoring.tf` | Log Analytics workspace (Landing Zone subscription); Defender examples |
+| `applications.tf` | Application Insights, Linux Web Apps, and Function Apps |
+| `containers.tf` | Container registries, diagnostics, and AcrPull assignments |
+| `compute.tf` | SSH-only Linux VMs |
+| `storage.tf` | Storage accounts and diagnostics |
+| `key-vaults.tf` | Key Vaults and diagnostics |
+| `databases.tf` | Azure SQL and diagnostics |
+| `private-connectivity.tf` | Opt-in private endpoint composition example |
+| `avd.tf` | Azure Virtual Desktop host pools and session hosts (`enable_avd`) |
+| `aca.tf` | Azure Container Apps environment and apps (`enable_aca`) |
+| `front-door.tf` | Front Door + WAF (`enable_front_door`, Landing Zone subscription) |
+| `outputs.tf` | Non-secret deployment contract |
+| `terraform.tfvars.example` | Safe example values; copy but never commit secrets |
+| `web-workload.tfvars.example` | Optional Stage 2 web workload overlay |
 
-### 6. Apply Configuration
-```bash
-terraform apply
-```
+## Observability choice
 
-## Module Control Flags
-
-Use boolean variables to enable/disable modules:
+The default creates one workspace, in the Landing Zone subscription's shared
+resource group, with a finite example quota. It receives diagnostics from both
+subscriptions:
 
 ```hcl
-enable_networking      = true   # Core - Always required
-enable_storage_account = true   # Core - Almost always required
-enable_key_vault       = true   # Core - Almost always required
-enable_virtual_machine = false  # Optional
-enable_app_service     = false  # Optional
-enable_front_door      = false  # Optional - for multi-region
-enable_redis_cache     = false  # Optional
+enable_log_analytics            = true
+log_analytics_retention_in_days = 30
+log_analytics_daily_quota_gb    = 5
 ```
 
-## Multi-Region Deployment
+To use a central workspace, set `log_analytics_workspace_id`. The root then
+skips local workspace creation and sends diagnostics to the supplied ID. Set
+`enable_log_analytics = false` with no existing ID only when the customer has
+explicitly accepted that diagnostic settings will not be created.
 
-### Option 1: Separate Folders (Recommended)
-```
-deployments/
-├── contoso-eastus/
-│   ├── main.tf
-│   └── terraform.tfvars
-└── contoso-westeurope/
-    ├── main.tf
-    └── terraform.tfvars
-```
+## Isolation rules
 
-Copy the template for each region and update `location` and `location_code`.
+- One backend key and state boundary per customer/environment/region.
+- One customer repository must not read another customer's state directly.
+- Customer-specific policy belongs in the customer root, not in shared modules.
+- Upgrade module release tags through reviewed pull requests and inspect the
+  resulting plan before merge.
 
-### Option 2: Terraform Workspaces
-```bash
-terraform workspace new contoso-eastus
-terraform workspace new contoso-westeurope
-terraform workspace select contoso-eastus
-```
-
-## File Structure
-
-- `main.tf` - Module calls and resource definitions
-- `variables.tf` - Variable declarations
-- `terraform.tfvars` - Variable values (customer-specific)
-- `outputs.tf` - Output definitions
-- `backend.tf` - Remote state configuration (optional)
-
-## Common Patterns
-
-### Pattern 1: Basic Landing Zone (VNet + Storage + Key Vault)
-```hcl
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
-```
-
-### Pattern 2: VM Workload
-```hcl
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
-enable_virtual_machine = true
-```
-
-### Pattern 3: App Service with Caching
-```hcl
-enable_networking      = true
-enable_storage_account = true
-enable_key_vault       = true
-enable_app_service     = true
-enable_redis_cache     = true
-```
-
-## Customizing Subnets
-
-Edit the `subnets` variable in `terraform.tfvars`:
-
-```hcl
-subnets = {
-  frontend = {
-    address_prefix = "10.0.10.0/24"
-  }
-  backend = {
-    address_prefix = "10.0.20.0/24"
-  }
-  database = {
-    address_prefix = "10.0.30.0/24"
-  }
-}
-```
-
-## Remote State Storage
-
-For production, configure remote state storage in `backend.tf`:
-
-1. Create a storage account for state files
-2. Update `backend.tf` with your details
-3. Uncomment the backend block
-4. Run `terraform init -reconfigure`
-
-## Best Practices
-
-1. **Never commit** `terraform.tfvars` with real values to version control
-2. **Use remote state** for production deployments
-3. **Enable only needed modules** to reduce costs
-4. **Follow naming conventions** defined in module READMEs
-5. **Tag all resources** appropriately
-6. **Review plan** before applying changes
-7. **Use workspaces or separate folders** for multi-region deployments
-
-## Getting Help
-
-- See [.github/copilot-instructions.md](../../.github/copilot-instructions.md) for full documentation
-- Check individual module READMEs in `modules/` folder
-- Use GitHub Copilot for assistance (it has full context of this template)
+The implementation sequence for additional workloads is in
+`IMPLEMENTATION_ROADMAP.md`.

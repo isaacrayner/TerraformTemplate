@@ -1,0 +1,41 @@
+# Optional Stage 2 overlay. Pass this after terraform.tfvars:
+# terraform plan -var-file=terraform.tfvars -var-file=web-workload.tfvars.example
+#
+# Public access remains disabled. Add private endpoints/DNS before expecting the
+# web app or registry to be reachable from a workload network.
+
+application_insights = {
+  web = {
+    application_type     = "web"
+    daily_data_cap_in_gb = 5
+    retention_in_days    = 90
+  }
+}
+
+container_registries = {
+  platform = {
+    sku                           = "Premium"
+    public_network_access_enabled = false
+  }
+}
+
+web_apps = {
+  web = {
+    service_plan_sku_name         = "P1v3"
+    public_network_access_enabled = false
+    application_insights_key      = "web"
+    application_stack = {
+      node_version = "20-lts"
+    }
+    app_settings = {
+      ENVIRONMENT = "production"
+    }
+  }
+}
+
+# Function Apps reference a key in storage_accounts. The storage network policy
+# must allow the function plan to reach host storage.
+function_apps = {}
+
+# Add a real SSH public key before enabling a VM.
+virtual_machines = {}

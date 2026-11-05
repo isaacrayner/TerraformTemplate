@@ -1,37 +1,30 @@
 # Monitoring & Observability
 #
-# Log Analytics Workspace is provisioned in landing-zone.tf (Landing Zone subscription).
-# Reference its resource ID as: azurerm_log_analytics_workspace.shared[0].id
-# It is available when enable_shared_monitoring = true.
+# Log Analytics lives in the LANDING ZONE subscription (default provider), in
+# the shared resource group, and receives diagnostics from both subscriptions
+# (CONVENTIONS.md #4). Every diagnostic-setting call in this root gates on
+# local.log_analytics_workspace_id (see locals.tf).
 #
-# Application Insights below deploys to the Compute subscription and can optionally
-# be wired to the shared workspace for centralised APM.
+# Application Insights components are in applications.tf (Compute subscription)
+# and are workspace-based on this workspace.
 
 # =====================================================
-# APPLICATION INSIGHTS (Compute subscription)
-# Connect to the shared Log Analytics workspace for unified APM + logs.
+# LOG ANALYTICS WORKSPACE (Landing Zone subscription)
+# Skipped when log_analytics_workspace_id points at an existing workspace.
 # =====================================================
-# module "application_insights" {
-#   for_each = var.application_insights_instances
-#   source   = "../../modules/application-insights"
-#   providers = { azurerm = azurerm.compute }
-#
-#   customer_short_name = var.customer_short_name
-#   environment         = var.environment
-#   location            = var.location
-#   location_code       = var.location_code
-#   instance_number     = var.instance_number
-#   name_suffix         = each.key  # e.g., "web", "api", "worker"
-#
-#   resource_group_name = var.enable_spoke_networking ? module.spoke_networking[0].resource_group_name : var.existing_compute_resource_group_name
-#
-#   application_type = each.value.application_type  # web, ios, java, other
-#
-#   # Connect to the shared Log Analytics workspace in the Landing Zone subscription.
-#   # workspace_id = var.enable_shared_monitoring ? azurerm_log_analytics_workspace.shared[0].id : null
-#
-#   tags = merge(var.tags, { Purpose = each.key })
-# }
+module "log_analytics" {
+  count  = local.create_log_analytics ? 1 : 0
+  source = "../../modules/log-analytics"
+
+  name                = "log-${local.name_prefix}"
+  location            = var.location
+  resource_group_name = local.shared_resource_group_name
+
+  retention_in_days = var.log_analytics_retention_in_days
+  daily_quota_gb    = var.log_analytics_daily_quota_gb
+
+  tags = var.tags
+}
 
 # =====================================================
 # MICROSOFT DEFENDER FOR CLOUD (Both subscriptions)

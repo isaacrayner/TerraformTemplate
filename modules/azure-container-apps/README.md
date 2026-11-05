@@ -6,12 +6,25 @@ Deploys an **Azure Container App Environment** with multiple Container Apps, opt
 
 | Resource | Count | Naming |
 |---|---|---|
-| Resource Group | 1 | `rg-aca-{customer}-{env}-{region}` |
-| Log Analytics Workspace | 1 | `law-aca-{customer}-{env}-{region}-{instance}` |
-| Container App Environment | 1 | `cae-{customer}-{env}-{region}-{instance}` |
-| Container App | 1 per app entry | `ca-{customer}-{env}-{region}-{instance}-{key}` |
-| Container Registry (optional) | 0–1 | `acr{customer}{env}{region}{instance}` |
-| AcrPull Role Assignment | 1 per app (when ACR enabled) | — |
+| Container App Environment | 1 | `cae-{name_suffix}` |
+| Container App | 1 per app entry | `ca-{key}-{name_suffix}` |
+| AcrPull Role Assignment | 1 per app (when `container_registry` is set) | — |
+
+The resource group, Log Analytics workspace and container registry come from the caller (`CONVENTIONS.md` #1 and #4).
+
+## Inputs
+
+| Name | Type | Notes |
+|---|---|---|
+| `name_suffix` | string | Compute in the root, e.g. `local.name_prefix` |
+| `location` | string | |
+| `resource_group_name` | string | From the `resource-group` module |
+| `log_analytics_workspace_id` | string | Optional. Shared workspace for environment logs |
+| `infrastructure_subnet_id` | string | Optional. Delegated subnet for VNet integration |
+| `internal_load_balancer_enabled` | bool | Default `false`. Requires `infrastructure_subnet_id` |
+| `container_registry` | object `{ id, login_server }` | Optional. Apps pull with managed identity and get AcrPull |
+| `container_apps` | map(object) | See `variables.tf` for every field |
+| `tags` | map(string) | |
 
 ## Quick start
 
@@ -19,14 +32,15 @@ Deploys an **Azure Container App Environment** with multiple Container Apps, opt
 module "aca" {
   source = "../../modules/azure-container-apps"
 
-  customer_short_name = var.customer_short_name
-  environment         = var.environment
-  location            = var.location
-  location_code       = var.location_code
-  instance_number     = var.instance_number
+  name_suffix                = local.name_prefix
+  location                   = var.location
+  resource_group_name        = local.resource_group_name
+  log_analytics_workspace_id = local.log_analytics_workspace_id
 
-  enable_container_registry = true
-  acr_sku                   = "Standard"
+  container_registry = {
+    id           = module.container_registry["apps"].id
+    login_server = module.container_registry["apps"].login_server
+  }
 
   container_apps = var.container_apps
 
@@ -101,10 +115,10 @@ Add this delegation in the networking module's subnet definition:
 subnets = {
   aca = {
     address_prefix = "10.0.20.0/23"
-    delegations = [{
-      name    = "Microsoft.App/environments"
+    delegation = {
+      name    = "aca-delegation"
       service = "Microsoft.App/environments"
-    }]
+    }
   }
 }
 ```
@@ -131,10 +145,6 @@ output "frontend_url" {
   value = module.aca.container_app_urls["frontend"]
 }
 
-# Push an image to the registry
-output "acr_push_command" {
-  value = "az acr login --name ${module.aca.acr_login_server} && docker push ${module.aca.acr_login_server}/myapi:v1"
-}
 ```
 
 ## Variable reference

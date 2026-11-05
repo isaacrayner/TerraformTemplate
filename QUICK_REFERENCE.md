@@ -15,7 +15,7 @@ cd deployments && cp -r _template contoso-eastus && cd contoso-eastus
 
 # 2. Configure
 cp terraform.tfvars.example terraform.tfvars
-# Edit: customer_short_name, subscription_id, location, location_code
+# Edit: customer_short_name, landing_zone_subscription_id, compute_subscription_id, location, location_code
 
 # 3. Initialize
 terraform init
@@ -35,10 +35,11 @@ customer_short_name = "contoso"   # 3-8 lowercase letters
 environment         = "prod"      # prod, dev, staging, uat, test
 location            = "eastus"    # Azure region
 location_code       = "eus"       # 2-4 letter code
-subscription_id     = "xxx..."    # Your Azure subscription
+landing_zone_subscription_id = "xxx..."  # Hub, shared Key Vault, Log Analytics
+compute_subscription_id      = "xxx..."  # Spoke and workloads
 
 # Module Control (Boolean)
-enable_networking      = true     # Core - always true
+enable_spoke_networking = true     # Core - always true
 enable_storage_account = true     # Core - almost always true
 enable_key_vault       = true     # Core - almost always true
 enable_virtual_machine = false    # Optional
@@ -76,7 +77,7 @@ Legend: `{c}` = customer, `{e}` = environment, `{r}` = region, `{i}` = instance
 
 ### Pattern 1: Basic Landing Zone
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 ```
@@ -84,7 +85,7 @@ enable_key_vault       = true
 
 ### Pattern 2: Web Application
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 enable_app_service     = true
@@ -94,7 +95,7 @@ enable_redis_cache     = true
 
 ### Pattern 3: VM Workload
 ```hcl
-enable_networking      = true
+enable_spoke_networking = true
 enable_storage_account = true
 enable_key_vault       = true
 enable_virtual_machine = true
